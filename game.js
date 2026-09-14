@@ -245,7 +245,11 @@
 
     moveTank(tank, targetDir) {
       if (this.gameState === 'GAMEOVER') return false;
+      const dirChanged = tank.dir !== targetDir;
       tank.dir = targetDir;
+      if (tank === this.player && dirChanged && this.isFiring) {
+        this.fireCooldown = 0; // 转向时立即重置开火冷却，新方向瞬间出膛！
+      }
       const offset = DIR_OFFSET[targetDir];
       const spd = tank === this.player ? this.playerSpeed : tank.speed;
       let nextX = tank.x + offset.x * spd;
@@ -279,12 +283,12 @@
       return 1.4; // 2星破铁与3星满级稳定手感
     }
 
-    // 子弹发射：0-1星单发限制，2星及以上允许双发
+    // 子弹发射：玩家默认支持2发连射（换向不卡弹），2星及以上允许3发
     fireBullet(owner) {
       if (!owner.alive || this.gameState === 'GAMEOVER') return false;
 
       const myActiveBullets = this.bullets.filter(b => b.owner === owner && b.active);
-      const maxBullets = (owner === this.player && this.player.starCount >= 2) ? 2 : 1;
+      const maxBullets = owner === this.player ? (this.player.starCount >= 2 ? 3 : 2) : 1;
       if (myActiveBullets.length >= maxBullets) return false;
 
       let bSpeed = 4.0;
@@ -422,6 +426,7 @@
             moveTouchId = tId;
             this.currentMoveDir = dir;
             this.moveTank(this.player, dir);
+            if (this.isFiring) this.fireCooldown = 0; // 触屏换向立刻刷新开火CD
           }
         }
       };
@@ -433,6 +438,9 @@
           const { canvasX, canvasY } = getTouchPos(t);
           const dir = resolveDirection(canvasX, canvasY);
           if (dir !== null) {
+            if (dir !== this.currentMoveDir && this.isFiring) {
+              this.fireCooldown = 0; // 滑动转向立刻出弹
+            }
             this.currentMoveDir = dir;
           }
         }
@@ -473,6 +481,9 @@
           if (keyDirMap[k] !== undefined) {
             activeKeys.add(k);
             refreshKeyDir();
+            if (this.isFiring) {
+              this.fireCooldown = 0; // 键盘换向立刻刷新开火CD，新方向瞬间开炮！
+            }
             e.preventDefault();
           }
           if (e.code === 'KeyJ' || e.key === 'j' || e.key === 'J' || e.code === 'Space' || e.key === ' ') {
@@ -977,9 +988,12 @@
       // 10. 侧边栏仪表盘
       this.ctx.fillStyle = '#7f7f7f';
       this.ctx.fillRect(STAGE_WIDTH, 0, SIDEBAR_WIDTH, STAGE_HEIGHT);
+      this.ctx.fillStyle = '#111111';
+      this.ctx.font = 'bold 10px monospace';
+      this.ctx.fillText('v2.0连发', STAGE_WIDTH + 8, 14);
       this.ctx.fillStyle = '#000000';
       this.ctx.font = 'bold 13px sans-serif';
-      this.ctx.fillText('敌军', STAGE_WIDTH + 14, 30);
+      this.ctx.fillText('敌军', STAGE_WIDTH + 14, 32);
       for (let i = 0; i < Math.min(16, this.enemies.length); i++) {
         const rx = STAGE_WIDTH + 14 + (i % 2) * 20;
         const ry = 42 + Math.floor(i / 2) * 16;

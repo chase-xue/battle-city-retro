@@ -344,7 +344,11 @@ Page({
 
   moveTank(tank, targetDir) {
     if (this.gameState === 'GAMEOVER') return false;
+    const dirChanged = tank.dir !== targetDir;
     tank.dir = targetDir;
+    if (tank === this.player && dirChanged && this.isHoldingFire) {
+      this.fireCooldown = 0; // 转向时立即重置开火冷却，新方向瞬间出膛！
+    }
     const offset = DIR_OFFSET[targetDir];
     const spd = tank === this.player ? this.playerSpeed : tank.speed;
     let nextX = tank.x + offset.x * spd;
@@ -376,6 +380,9 @@ Page({
     const targetDir = dirMap[dirStr];
     this.currentHoldDir = targetDir;
     this.moveTank(this.player, targetDir);
+    if (this.isHoldingFire) {
+      this.fireCooldown = 0; // 触屏换向立刻刷新开火CD
+    }
   },
 
   onDirEnd() {
@@ -388,6 +395,9 @@ Page({
     const dirMap = { up: DIR.UP, down: DIR.DOWN, left: DIR.LEFT, right: DIR.RIGHT };
     const targetDir = dirMap[dirStr];
     this.moveTank(this.player, targetDir);
+    if (this.isHoldingFire) {
+      this.fireCooldown = 0;
+    }
   },
 
   onFireTap() {
@@ -414,9 +424,9 @@ Page({
   fireBullet(owner) {
     if (!owner.alive || this.gameState === 'GAMEOVER') return false;
 
-    // 火力 0-1 级单发，2-3 级可双发。
+    // 玩家默认支持2发连射（换向不卡弹），2星及以上允许3发
     const myActiveBullets = this.bullets.filter(b => b.owner === owner && b.active);
-    const maxBullets = owner === this.player && this.player.weaponLevel >= 2 ? 2 : 1;
+    const maxBullets = owner === this.player ? (this.player.weaponLevel >= 2 ? 3 : 2) : 1;
     if (myActiveBullets.length >= maxBullets) return false;
 
     const offset = DIR_OFFSET[owner.dir];
