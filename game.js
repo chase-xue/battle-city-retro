@@ -98,7 +98,7 @@
         y: 12 * TILE_SIZE,
         dir: DIR.UP,
         size: 28,
-        speed: 3.5,
+        speed: 1.8,
         alive: true,
         lives: 3,
         score: 0,
@@ -142,9 +142,9 @@
 
     spawnInitialEnemies() {
       this.enemies = [
-        { x: 0 * TILE_SIZE, y: 0, dir: DIR.DOWN, speed: 1.5, size: 28, alive: true, hp: 1, score: 100, dirTimer: 30, shootTimer: 50, color: '#e0e0e0' },
-        { x: 6 * TILE_SIZE, y: 0, dir: DIR.DOWN, speed: 2.2, size: 28, alive: true, hp: 1, score: 200, dirTimer: 45, shootTimer: 60, color: '#388e3c' },
-        { x: 12 * TILE_SIZE, y: 0, dir: DIR.DOWN, speed: 1.4, size: 28, alive: true, hp: 1, score: 300, dirTimer: 60, shootTimer: 70, color: '#f57c00' }
+        { x: 0 * TILE_SIZE, y: 0, dir: DIR.DOWN, speed: 1.2, size: 28, alive: true, hp: 1, score: 100, dirTimer: 30, shootTimer: 50, color: '#e0e0e0' },
+        { x: 6 * TILE_SIZE, y: 0, dir: DIR.DOWN, speed: 1.8, size: 28, alive: true, hp: 1, score: 200, dirTimer: 45, shootTimer: 60, color: '#388e3c' },
+        { x: 12 * TILE_SIZE, y: 0, dir: DIR.DOWN, speed: 1.3, size: 28, alive: true, hp: 1, score: 300, dirTimer: 60, shootTimer: 70, color: '#f57c00' }
       ];
     }
 
