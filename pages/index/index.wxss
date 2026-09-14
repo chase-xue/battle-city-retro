@@ -1,0 +1,209 @@
+/* 经典坦克大战小程序 - 绝不扭曲的标准街机样式 */
+page {
+  background-color: #000000;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  margin: 0;
+  padding: 0;
+}
+
+.page-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  width: 100vw;
+  height: 100vh;
+  background-color: #121212;
+  box-sizing: border-box;
+}
+
+/* 1. 顶部游戏屏幕区 (严格锁定 480x416 经典 1.15:1 画面比例) */
+.screen-box {
+  width: 100%;
+  max-width: 480px;
+  background-color: #000000;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  border-bottom: 3px solid #333333;
+}
+
+.screen-canvas {
+  width: 100vw;
+  height: calc(100vw * 416 / 480);
+  max-width: 480px;
+  max-height: 416px;
+  display: block;
+  background-color: #000000;
+}
+
+/* 2. 状态信息栏 */
+.dashboard {
+  width: 100%;
+  max-width: 480px;
+  height: 38px;
+  background-color: #1e1e1e;
+  border-bottom: 2px solid #2a2a2a;
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  box-sizing: border-box;
+  padding: 0 16px;
+}
+
+.dash-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+}
+
+.cell-label {
+  color: #888888;
+  font-weight: bold;
+}
+
+.cell-val {
+  font-weight: bold;
+  font-size: 15px;
+}
+
+.val-safe { color: #4caf50; }
+.val-danger { color: #ff1744; }
+.val-lives { color: #ffd700; }
+.val-score { color: #ff5252; min-width: 40px; }
+
+/* 3. 下方街机控制台 */
+.controller-panel {
+  flex: 1;
+  width: 100%;
+  max-width: 480px;
+  background: radial-gradient(circle at 50% 50%, #222222 0%, #111111 100%);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 24px;
+  box-sizing: border-box;
+}
+
+/* 3x3 九宫格十字手柄 (各 56x56px，绝对工整对称) */
+.dpad-grid {
+  display: grid;
+  grid-template-columns: 56px 56px 56px;
+  grid-template-rows: 56px 56px 56px;
+  width: 168px;
+  height: 168px;
+  justify-content: center;
+  align-content: center;
+}
+
+.grid-empty {
+  width: 56px;
+  height: 56px;
+}
+
+.dpad-core {
+  width: 56px;
+  height: 56px;
+  background-color: #222222;
+}
+
+.dpad-key {
+  width: 56px;
+  height: 56px;
+  background-color: #2c2c2c;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  border: 2px solid #444444;
+  box-shadow: 0 4px 0 #151515, 0 5px 8px rgba(0,0,0,0.5);
+  box-sizing: border-box;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: pointer;
+}
+
+.key-up {
+  border-top-left-radius: 8px;
+  border-top-right-radius: 8px;
+}
+
+.key-down {
+  border-bottom-left-radius: 8px;
+  border-bottom-right-radius: 8px;
+}
+
+.key-left {
+  border-top-left-radius: 8px;
+  border-bottom-left-radius: 8px;
+}
+
+.key-right {
+  border-top-right-radius: 8px;
+  border-bottom-right-radius: 8px;
+}
+
+.key-active {
+  background-color: #555555 !important;
+  color: #ffd700 !important;
+  transform: translateY(3px);
+  box-shadow: 0 1px 0 #151515 !important;
+}
+
+/* 右侧动作区 */
+.action-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+}
+
+.btn-reset {
+  padding: 6px 16px;
+  background-color: #37474f;
+  color: #eceff1;
+  font-size: 13px;
+  font-weight: bold;
+  border-radius: 16px;
+  border: 1px solid #546e7a;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.4);
+  cursor: pointer;
+}
+
+.btn-reset:active {
+  background-color: #263238;
+}
+
+/* 开火大红钮 */
+.btn-shoot {
+  width: 86px;
+  height: 86px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #ff5252, #c62828);
+  border: 4px solid #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 6px 0 #7f0000, 0 10px 15px rgba(229, 57, 53, 0.4);
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: pointer;
+}
+
+.shoot-txt {
+  color: #ffffff;
+  font-size: 22px;
+  font-weight: bold;
+  letter-spacing: 1px;
+}
+
+.shoot-active {
+  transform: translateY(5px);
+  box-shadow: 0 1px 0 #7f0000, 0 4px 8px rgba(229, 57, 53, 0.4) !important;
+  background: radial-gradient(circle at 35% 35%, #e53935, #b71c1c) !important;
+}

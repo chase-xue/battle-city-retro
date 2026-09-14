@@ -1,0 +1,53 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.retro.battlecity'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.retro.battlecity"
+        minSdk 21
+        targetSdk 34
+        versionCode 1
+        versionName "1.0.0"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+        debug {
+            applicationIdSuffix ".debug"
+            debuggable true
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    sourceSets {
+        main {
+            assets.srcDirs = ['src/main/assets']
+        }
+    }
+}
+
+// 自动在编译前将项目根目录的 HTML5 游戏核心代码同步至 assets 目录
+tasks.register('syncWebAssets', Copy) {
+    from('../../') {
+        include 'index.html'
+        include 'game.js'
+    }
+    into 'src/main/assets'
+}
+
+preBuild.dependsOn syncWebAssets
+
+dependencies {
+    // 纯原生精简开发，无需沉重外部依赖
+}

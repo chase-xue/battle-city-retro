@@ -1,0 +1,43 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+
+# Editors & IDEs
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Node / Web
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+dist/
+.cache/
+
+# WeChat Mini Program (Ignore local developer private settings)
+project.private.config.json
+miniprogram_npm/
+
+# Environment & Logs
+*.log
+.env
+.env.*.local
+.system_generated/
+
+# Android Build Outputs
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/app/src/main/assets/
+build-output/
+*.apk
+*.aab

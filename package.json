@@ -1,0 +1,27 @@
+{
+  "name": "battle-city-retro",
+  "version": "1.0.0",
+  "description": "经典《坦克大战》(Battle City) 原汁原味复刻版，纯 HTML5 Canvas 像素绘制与 Web Audio 8-bit 合成，支持浏览器与微信小程序/小游戏双端畅玩。",
+  "main": "game.js",
+  "scripts": {
+    "dev": "python3 -m http.server 8080",
+    "start": "npx serve ."
+  },
+  "keywords": [
+    "battle-city",
+    "tank-game",
+    "canvas",
+    "web-audio",
+    "wechat-miniprogram",
+    "wechat-minigame",
+    "retro-game",
+    "pixel-art"
+  ],
+  "author": "chase-xue",
+  "homepage": "https://chase-xue.github.io/battle-city-retro/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/chase-xue/battle-city-retro.git"
+  },
+  "license": "MIT"
+}

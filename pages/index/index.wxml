@@ -1,0 +1,78 @@
+<!-- 经典坦克大战小程序 - 黄金比例街机界面 -->
+<view class="page-container">
+  <!-- 1. 游戏主画面 (480x416 严格 1.15:1 经典比例) -->
+  <view class="screen-box">
+    <canvas type="2d" id="tankCanvas" class="screen-canvas"></canvas>
+  </view>
+
+  <!-- 2. 状态信息面板 -->
+  <view class="dashboard">
+    <view class="dash-cell">
+      <text class="cell-label">关卡</text>
+      <text class="cell-val">{{stage}} / ∞</text>
+    </view>
+    <view class="dash-cell">
+      <text class="cell-label">火力</text>
+      <text class="cell-val">{{fireLevel}}</text>
+    </view>
+    <view class="dash-cell">
+      <text class="cell-label">护盾</text>
+      <text class="cell-val">{{shieldSeconds}}s</text>
+    </view>
+    <view class="dash-cell">
+      <text class="cell-label">生命</text>
+      <text class="cell-val val-lives">{{lives}}</text>
+    </view>
+    <view class="dash-cell">
+      <text class="cell-label">得分</text>
+      <text class="cell-val val-score">{{score}}</text>
+    </view>
+  </view>
+
+  <!-- 3. 下方街机控制台 (九宫格标准十字手柄 + 大红开火钮) -->
+  <view class="controller-panel">
+    <!-- 经典 3x3 九宫格十字手柄 (绝对工整对称) -->
+    <view class="dpad-grid">
+      <view class="grid-empty"></view>
+      <view class="dpad-key key-up {{activeDir==='up'?'key-active':''}}" 
+            catchtouchstart="onDirStart" data-dir="up" 
+            catchtouchend="onDirEnd" 
+            catchtouchcancel="onDirEnd"
+            catchtap="onDirTap" data-dir="up">▲</view>
+      <view class="grid-empty"></view>
+
+      <view class="dpad-key key-left {{activeDir==='left'?'key-active':''}}" 
+            catchtouchstart="onDirStart" data-dir="left" 
+            catchtouchend="onDirEnd" 
+            catchtouchcancel="onDirEnd"
+            catchtap="onDirTap" data-dir="left">◀</view>
+      <view class="dpad-core"></view>
+      <view class="dpad-key key-right {{activeDir==='right'?'key-active':''}}" 
+            catchtouchstart="onDirStart" data-dir="right" 
+            catchtouchend="onDirEnd" 
+            catchtouchcancel="onDirEnd"
+            catchtap="onDirTap" data-dir="right">▶</view>
+
+      <view class="grid-empty"></view>
+      <view class="dpad-key key-down {{activeDir==='down'?'key-active':''}}" 
+            catchtouchstart="onDirStart" data-dir="down" 
+            catchtouchend="onDirEnd" 
+            catchtouchcancel="onDirEnd"
+            catchtap="onDirTap" data-dir="down">▼</view>
+      <view class="grid-empty"></view>
+    </view>
+
+    <!-- 功能区：重开 + 开火 -->
+    <view class="action-wrap">
+      <view class="btn-reset" catchtap="onRestart">重新开始</view>
+      
+      <view class="btn-shoot {{isFiring?'shoot-active':''}}" 
+            catchtouchstart="onFireStart" 
+            catchtouchend="onFireEnd"
+            catchtouchcancel="onFireEnd"
+            catchtap="onFireTap">
+        <text class="shoot-txt">开火</text>
+      </view>
+    </view>
+  </view>
+</view>
