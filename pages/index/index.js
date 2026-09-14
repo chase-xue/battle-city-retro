@@ -109,7 +109,7 @@ Page({
       x: 4 * TILE_SIZE,
       y: 12 * TILE_SIZE,
       dir: DIR.UP,
-      speed: 1.8,
+      speed: 1.0,
       size: 28,
       alive: true,
       lives: 3,
@@ -295,12 +295,58 @@ Page({
     return true;
   },
 
+  // 坦克与坦克实体碰撞检测：不可重叠
+  isTankColliding(tank, nextX, nextY) {
+    const allTanks = [];
+    if (this.player && this.player.alive) allTanks.push(this.player);
+    if (this.enemies) {
+      for (const e of this.enemies) {
+        if (e.alive) allTanks.push(e);
+      }
+    }
+
+    const nextCenterX = nextX + tank.size / 2;
+    const nextCenterY = nextY + tank.size / 2;
+    const currCenterX = tank.x + tank.size / 2;
+    const currCenterY = tank.y + tank.size / 2;
+    const threshold = 26;
+
+    for (const other of allTanks) {
+      if (other === tank) continue;
+
+      const otherCenterX = other.x + other.size / 2;
+      const otherCenterY = other.y + other.size / 2;
+      const nextDx = Math.abs(nextCenterX - otherCenterX);
+      const nextDy = Math.abs(nextCenterY - otherCenterY);
+
+      if (nextDx < threshold && nextDy < threshold) {
+        const currDx = Math.abs(currCenterX - otherCenterX);
+        const currDy = Math.abs(currCenterY - otherCenterY);
+        const currDistSq = currDx * currDx + currDy * currDy;
+        const nextDistSq = nextDx * nextDx + nextDy * nextDy;
+        if (nextDistSq > currDistSq) {
+          continue; // 允许脱离重叠
+        }
+        return true; // 阻挡重叠
+      }
+    }
+    return false;
+  },
+
+  get playerSpeed() {
+    if (!this.player) return 1.0;
+    if (this.player.weaponLevel === 0) return 1.0;
+    if (this.player.weaponLevel === 1) return 1.25;
+    return 1.4;
+  },
+
   moveTank(tank, targetDir) {
     if (this.gameState === 'GAMEOVER') return false;
     tank.dir = targetDir;
     const offset = DIR_OFFSET[targetDir];
-    let nextX = tank.x + offset.x * tank.speed;
-    let nextY = tank.y + offset.y * tank.speed;
+    const spd = tank === this.player ? this.playerSpeed : tank.speed;
+    let nextX = tank.x + offset.x * spd;
+    let nextY = tank.y + offset.y * spd;
 
     const alignThreshold = 10;
     if (targetDir === DIR.UP || targetDir === DIR.DOWN) {
@@ -313,7 +359,7 @@ Page({
       else if (rem > (TILE_SIZE / 2) - alignThreshold) nextY += ((TILE_SIZE / 2) - rem);
     }
 
-    if (this.canPass(nextX, nextY, tank.size)) {
+    if (this.canPass(nextX, nextY, tank.size) && !this.isTankColliding(tank, nextX, nextY)) {
       tank.x = nextX;
       tank.y = nextY;
       return true;
@@ -324,29 +370,14 @@ Page({
   onDirStart(e) {
     if (this.gameState === 'GAMEOVER') return;
     const dirStr = e.currentTarget.dataset.dir;
-    this.setData({ activeDir: dirStr });
-
     const dirMap = { up: DIR.UP, down: DIR.DOWN, left: DIR.LEFT, right: DIR.RIGHT };
     const targetDir = dirMap[dirStr];
     this.currentHoldDir = targetDir;
-
     this.moveTank(this.player, targetDir);
-
-    if (this.moveTimer) clearInterval(this.moveTimer);
-    this.moveTimer = setInterval(() => {
-      if (this.currentHoldDir !== null && this.player.alive && this.gameState === 'PLAYING') {
-        this.moveTank(this.player, this.currentHoldDir);
-      }
-    }, 1000 / 30);
   },
 
   onDirEnd() {
-    this.setData({ activeDir: null });
     this.currentHoldDir = null;
-    if (this.moveTimer) {
-      clearInterval(this.moveTimer);
-      this.moveTimer = null;
-    }
   },
 
   onDirTap(e) {
@@ -359,19 +390,15 @@ Page({
 
   onFireTap() {
     if (this.gameState === 'GAMEOVER') return;
-    this.setData({ isFiring: true });
     this.fireBullet(this.player);
-    setTimeout(() => this.setData({ isFiring: false }), 120);
   },
 
   onFireStart() {
     if (this.gameState === 'GAMEOVER') return;
-    this.setData({ isFiring: true });
     this.fireBullet(this.player);
   },
 
   onFireEnd() {
-    this.setData({ isFiring: false });
   },
 
   fireBullet(owner) {
@@ -427,6 +454,11 @@ Page({
       return;
     }
 
+    // 玩家持续移动（按住时每帧移动，松开时停止，开火绝不打断）
+    if (this.player.alive && this.currentHoldDir !== null) {
+      this.moveTank(this.player, this.currentHoldDir);
+    }
+
     if (this.player.shield > 0) {
       this.player.shield--;
       if (this.player.shield % 60 === 0) this.setData({ shieldSeconds: Math.ceil(this.player.shield / 60) });
@@ -441,7 +473,11 @@ Page({
         enemy.dirTimer = Math.floor(Math.random() * 50) + 30;
         enemy.dir = [DIR.DOWN, DIR.DOWN, DIR.LEFT, DIR.RIGHT, DIR.UP][Math.floor(Math.random() * 5)];
       }
-      this.moveTank(enemy, enemy.dir);
+      const moved = this.moveTank(enemy, enemy.dir);
+      if (!moved) {
+        enemy.dir = [DIR.DOWN, DIR.LEFT, DIR.RIGHT, DIR.UP][Math.floor(Math.random() * 4)];
+        enemy.dirTimer = Math.floor(Math.random() * 30) + 20;
+      }
 
       enemy.shootTimer--;
       if (enemy.shootTimer <= 0) {
@@ -476,7 +512,7 @@ Page({
         this.effects.push({ type: 'hit', x: b.x - 8, y: b.y - 8, frame: 0 });
         continue;
       } else if (tile === TILE.IRON) {
-        if (b.owner === this.player && b.power >= 3) this.subGrid[minR][minC] = TILE.EMPTY;
+        if (b.owner === this.player && (b.power >= 2 || this.player.weaponLevel >= 2)) this.subGrid[minR][minC] = TILE.EMPTY;
         b.active = false;
         this.effects.push({ type: 'hit', x: b.x - 8, y: b.y - 8, frame: 0 });
         continue;
@@ -516,15 +552,18 @@ Page({
         if (Math.abs(b.x - (this.player.x + this.player.size / 2)) < 16 && Math.abs(b.y - (this.player.y + this.player.size / 2)) < 16) {
           b.active = false;
           if (this.player.shield <= 0) {
-            if (this.player.weaponLevel > 0) {
-              this.player.weaponLevel--;
-              this.player.shield = 60;
-              this.effects.push({ type: 'hit', x: this.player.x, y: this.player.y, frame: 0 });
-              this.setData({ fireLevel: this.player.weaponLevel, shieldSeconds: 1 });
+            if (this.player.weaponLevel >= 3) {
+              // 3颗星多一条命：吸收致命炮弹，降级为初始未吃星星状态，不扣命！
+              this.player.weaponLevel = 0;
+              this.player.shield = 90;
+              this.effects.push({ type: 'explode', x: this.player.x, y: this.player.y, frame: 0, isBig: false });
+              this.setData({ fireLevel: 0, shieldSeconds: 2 });
+              try { wx.vibrateLong(); } catch (err) {}
             } else {
+              this.player.weaponLevel = 0;
               this.player.lives--;
               this.effects.push({ type: 'explode', x: this.player.x, y: this.player.y, frame: 0, isBig: true });
-              this.setData({ lives: Math.max(0, this.player.lives) });
+              this.setData({ lives: Math.max(0, this.player.lives), fireLevel: 0 });
               if (this.player.lives > 0) {
                 this.player.x = 4 * TILE_SIZE;
                 this.player.y = 12 * TILE_SIZE;

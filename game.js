@@ -81,6 +81,16 @@
     shoot() { this.playTone(650, 0.06, 'square'); }
     hit() { this.playTone(180, 0.12, 'triangle'); }
     explode() { this.playTone(120, 0.25, 'sawtooth'); }
+    powerup() {
+      const notes = [523.25, 659.25, 783.99, 1046.50];
+      notes.forEach((f, i) => {
+        setTimeout(() => this.playTone(f, 0.07, 'square'), i * 65);
+      });
+    }
+    armorBreak() {
+      this.playTone(260, 0.15, 'sawtooth');
+      setTimeout(() => this.playTone(130, 0.25, 'triangle'), 70);
+    }
   }
   const sounds = new SoundManager();
 
@@ -98,23 +108,43 @@
         y: 12 * TILE_SIZE,
         dir: DIR.UP,
         size: 28,
-        speed: 1.8,
+        speed: 1.0,
         alive: true,
         lives: 3,
         score: 0,
-        shield: 120
+        shield: 120,
+        starCount: 0 // 0: 普通, 1: 变形, 2: 破铁, 3: 多一条命(免死护甲)
       };
 
       this.enemies = [];
+      this.powerups = [];
       this.bullets = [];
       this.effects = [];
       this.ripples = [];
       this.currentMoveDir = null;
+      this.animTick = 0;
 
       this.initMap();
       this.spawnInitialEnemies();
+      this.spawnStar(6 * TILE_SIZE + 3, 8 * TILE_SIZE + 3); // 开局在老巢上方刷新一颗五角星，方便立即体验
       this.bindAllEvents();
       this.startLoop();
+    }
+
+    spawnStar(x, y) {
+      if (x !== undefined && y !== undefined) {
+        this.powerups.push({ x, y, size: 26, timer: 1500 });
+        return;
+      }
+      const clearSpots = [
+        { x: 4 * TILE_SIZE + 3, y: 8 * TILE_SIZE + 3 },
+        { x: 8 * TILE_SIZE + 3, y: 8 * TILE_SIZE + 3 },
+        { x: 6 * TILE_SIZE + 3, y: 6 * TILE_SIZE + 3 },
+        { x: 2 * TILE_SIZE + 3, y: 6 * TILE_SIZE + 3 },
+        { x: 10 * TILE_SIZE + 3, y: 6 * TILE_SIZE + 3 }
+      ];
+      const spot = clearSpots[Math.floor(Math.random() * clearSpots.length)];
+      this.powerups.push({ x: spot.x, y: spot.y, size: 26, timer: 1500 });
     }
 
     initMap() {
@@ -142,9 +172,9 @@
 
     spawnInitialEnemies() {
       this.enemies = [
-        { x: 0 * TILE_SIZE, y: 0, dir: DIR.DOWN, speed: 1.2, size: 28, alive: true, hp: 1, score: 100, dirTimer: 30, shootTimer: 50, color: '#e0e0e0' },
-        { x: 6 * TILE_SIZE, y: 0, dir: DIR.DOWN, speed: 1.8, size: 28, alive: true, hp: 1, score: 200, dirTimer: 45, shootTimer: 60, color: '#388e3c' },
-        { x: 12 * TILE_SIZE, y: 0, dir: DIR.DOWN, speed: 1.3, size: 28, alive: true, hp: 1, score: 300, dirTimer: 60, shootTimer: 70, color: '#f57c00' }
+        { x: 0 * TILE_SIZE, y: 0, dir: DIR.DOWN, speed: 0.85, size: 28, alive: true, hp: 1, score: 100, dirTimer: 30, shootTimer: 50, color: '#e0e0e0', isFlashing: false },
+        { x: 6 * TILE_SIZE, y: 0, dir: DIR.DOWN, speed: 1.25, size: 28, alive: true, hp: 1, score: 200, dirTimer: 45, shootTimer: 60, color: '#388e3c', isFlashing: true }, // 红色闪烁掉宝坦克！
+        { x: 12 * TILE_SIZE, y: 0, dir: DIR.DOWN, speed: 0.9, size: 28, alive: true, hp: 1, score: 300, dirTimer: 60, shootTimer: 70, color: '#f57c00', isFlashing: false }
       ];
     }
 
@@ -169,12 +199,55 @@
       return true;
     }
 
+    // 坦克与坦克之间的实体碰撞检测：严禁重叠！
+    isTankColliding(tank, nextX, nextY) {
+      const allTanks = [];
+      if (this.player && this.player.alive) allTanks.push(this.player);
+      if (this.enemies) {
+        for (const e of this.enemies) {
+          if (e.alive) allTanks.push(e);
+        }
+      }
+
+      const nextCenterX = nextX + tank.size / 2;
+      const nextCenterY = nextY + tank.size / 2;
+      const currCenterX = tank.x + tank.size / 2;
+      const currCenterY = tank.y + tank.size / 2;
+
+      // 坦克标准尺寸 28x28，中心距小于 26 判定为躯体碰撞拦截
+      const threshold = 26;
+
+      for (const other of allTanks) {
+        if (other === tank) continue;
+
+        const otherCenterX = other.x + other.size / 2;
+        const otherCenterY = other.y + other.size / 2;
+
+        const nextDx = Math.abs(nextCenterX - otherCenterX);
+        const nextDy = Math.abs(nextCenterY - otherCenterY);
+
+        if (nextDx < threshold && nextDy < threshold) {
+          // 如果当前位置已经处于轻微重叠（如受击降级），仅允许朝远离方向移动脱困
+          const currDx = Math.abs(currCenterX - otherCenterX);
+          const currDy = Math.abs(currCenterY - otherCenterY);
+          const currDistSq = currDx * currDx + currDy * currDy;
+          const nextDistSq = nextDx * nextDx + nextDy * nextDy;
+          if (nextDistSq > currDistSq) {
+            continue; // 正在远离对方，允许脱离
+          }
+          return true; // 发生碰撞，严禁重叠穿透
+        }
+      }
+      return false;
+    }
+
     moveTank(tank, targetDir) {
       if (this.gameState === 'GAMEOVER') return false;
       tank.dir = targetDir;
       const offset = DIR_OFFSET[targetDir];
-      let nextX = tank.x + offset.x * tank.speed;
-      let nextY = tank.y + offset.y * tank.speed;
+      const spd = tank === this.player ? this.playerSpeed : tank.speed;
+      let nextX = tank.x + offset.x * spd;
+      let nextY = tank.y + offset.y * spd;
 
       const alignThreshold = 10;
       if (targetDir === DIR.UP || targetDir === DIR.DOWN) {
@@ -187,7 +260,8 @@
         else if (rem > (TILE_SIZE / 2) - alignThreshold) nextY += ((TILE_SIZE / 2) - rem);
       }
 
-      if (this.canPass(nextX, nextY, tank.size)) {
+      // 地图通行性检测 + 坦克与坦克不可重叠检测
+      if (this.canPass(nextX, nextY, tank.size) && !this.isTankColliding(tank, nextX, nextY)) {
         tank.x = nextX;
         tank.y = nextY;
         return true;
@@ -195,16 +269,27 @@
       return false;
     }
 
-    // 核心单发规则
+    // 玩家实际速度（0星初速1.0慢速还原经典FC，1星变形1.25，2/3星1.4）
+    get playerSpeed() {
+      if (!this.player) return 1.0;
+      if (this.player.starCount === 0) return 1.0; // 真正的古老 FC 经典稳健慢速
+      if (this.player.starCount === 1) return 1.25; // 1星变形微幅提速
+      return 1.4; // 2星破铁与3星满级稳定手感
+    }
+
+    // 子弹发射：0-1星单发限制，2星及以上允许双发
     fireBullet(owner) {
       if (!owner.alive || this.gameState === 'GAMEOVER') return;
 
       const myActiveBullets = this.bullets.filter(b => b.owner === owner && b.active);
-      if (myActiveBullets.length >= 1) return; // 场上已有未消失子弹，严格禁止发射下一颗！
+      const maxBullets = (owner === this.player && this.player.starCount >= 2) ? 2 : 1;
+      if (myActiveBullets.length >= maxBullets) return;
 
+      let bSpeed = 4.0;
       if (owner === this.player) {
         sounds.shoot();
         try { if (typeof wx !== 'undefined' && wx.vibrateShort) wx.vibrateShort({ type: 'light' }); } catch (e) {}
+        bSpeed = this.player.starCount >= 1 ? 8.5 : 6.0;
       }
 
       const offset = DIR_OFFSET[owner.dir];
@@ -215,7 +300,7 @@
         x: bx,
         y: cy,
         dir: owner.dir,
-        speed: owner === this.player ? 7.5 : 4.5,
+        speed: bSpeed,
         owner,
         active: true
       });
@@ -231,11 +316,14 @@
       this.player.lives = 3;
       this.player.score = 0;
       this.player.shield = 120;
+      this.player.starCount = 0;
       this.currentMoveDir = null;
+      this.powerups = [];
       this.bullets = [];
       this.effects = [];
       this.initMap();
       this.spawnInitialEnemies();
+      this.spawnStar(6 * TILE_SIZE + 3, 8 * TILE_SIZE + 3);
     }
 
     bindAllEvents() {
@@ -260,28 +348,41 @@
         };
       };
 
-      const handleInput = (rawX, rawY) => {
-        if (rawX === undefined || rawY === undefined) return;
-        const { canvasX, canvasY } = toCanvasCoords(rawX, rawY);
+      const getTouchPos = t => {
+        const rawX = t.clientX !== undefined ? t.clientX : (t.x !== undefined ? t.x : t.pageX);
+        const rawY = t.clientY !== undefined ? t.clientY : (t.y !== undefined ? t.y : t.pageY);
+        return toCanvasCoords(rawX, rawY);
+      };
+
+      const resolveDirection = (canvasX, canvasY) => {
+        const dpadX = CTRL.DPAD_X;
+        const dpadY = STAGE_HEIGHT + CTRL.DPAD_OFFSET_Y;
+
+        if (Math.hypot(canvasX - dpadX, canvasY - (dpadY - 42)) < 38) return DIR.UP;
+        if (Math.hypot(canvasX - dpadX, canvasY - (dpadY + 42)) < 38) return DIR.DOWN;
+        if (Math.hypot(canvasX - (dpadX - 42), canvasY - dpadY) < 38) return DIR.LEFT;
+        if (Math.hypot(canvasX - (dpadX + 42), canvasY - dpadY) < 38) return DIR.RIGHT;
+
+        const dx = canvasX - dpadX;
+        const dy = canvasY - dpadY;
+        if (Math.hypot(dx, dy) < 10) return null;
+        const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+        if (angle >= -45 && angle < 45) return DIR.RIGHT;
+        if (angle >= 45 && angle < 135) return DIR.DOWN;
+        if (angle >= -135 && angle < -45) return DIR.UP;
+        return DIR.LEFT;
+      };
+
+      let moveTouchId = null;
+
+      const handlePointerDown = (t, isMouse = false) => {
+        if (!t) return;
+        const { canvasX, canvasY } = getTouchPos(t);
+        const tId = isMouse ? 'mouse' : (t.identifier !== undefined ? t.identifier : 'touch');
         this.ripples.push({ x: canvasX, y: canvasY, r: 5, maxR: 28, alpha: 1.0 });
 
         if (this.gameState === 'GAMEOVER') {
           this.restart();
-          return;
-        }
-
-        if (canvasY <= STAGE_HEIGHT) {
-          this.fireBullet(this.player);
-          return;
-        }
-
-        const dpadX = CTRL.DPAD_X;
-        const dpadY = STAGE_HEIGHT + CTRL.DPAD_OFFSET_Y;
-        const fireX = CTRL.FIRE_X;
-        const fireY = STAGE_HEIGHT + CTRL.FIRE_OFFSET_Y;
-
-        if (Math.hypot(canvasX - fireX, canvasY - fireY) < 58) {
-          this.fireBullet(this.player);
           return;
         }
 
@@ -292,89 +393,187 @@
           return;
         }
 
-        if (Math.hypot(canvasX - dpadX, canvasY - (dpadY - 42)) < 38) {
-          this.currentMoveDir = DIR.UP;
-          this.moveTank(this.player, DIR.UP);
-          return;
-        }
-        if (Math.hypot(canvasX - dpadX, canvasY - (dpadY + 42)) < 38) {
-          this.currentMoveDir = DIR.DOWN;
-          this.moveTank(this.player, DIR.DOWN);
-          return;
-        }
-        if (Math.hypot(canvasX - (dpadX - 42), canvasY - dpadY) < 38) {
-          this.currentMoveDir = DIR.LEFT;
-          this.moveTank(this.player, DIR.LEFT);
-          return;
-        }
-        if (Math.hypot(canvasX - (dpadX + 42), canvasY - dpadY) < 38) {
-          this.currentMoveDir = DIR.RIGHT;
-          this.moveTank(this.player, DIR.RIGHT);
-          return;
-        }
+        const fireX = CTRL.FIRE_X;
+        const fireY = STAGE_HEIGHT + CTRL.FIRE_OFFSET_Y;
+        const isFireButton = Math.hypot(canvasX - fireX, canvasY - fireY) < 58;
+        const isFireZone = canvasX >= 240 && canvasY > STAGE_HEIGHT;
+        const isScreenTap = canvasY <= STAGE_HEIGHT;
 
-        if (canvasX < 240) {
-          const dx = canvasX - dpadX;
-          const dy = canvasY - dpadY;
-          const angle = Math.atan2(dy, dx) * (180 / Math.PI);
-          if (angle >= -45 && angle < 45) this.currentMoveDir = DIR.RIGHT;
-          else if (angle >= 45 && angle < 135) this.currentMoveDir = DIR.DOWN;
-          else if (angle >= -135 && angle < -45) this.currentMoveDir = DIR.UP;
-          else this.currentMoveDir = DIR.LEFT;
-          this.moveTank(this.player, this.currentMoveDir);
-        } else {
+        if (isFireButton || isFireZone || isScreenTap) {
+          // 移动时随时开炮！绝不打断左手正在进行的移动！
           this.fireBullet(this.player);
+          return;
+        }
+
+        if (canvasX < 240 && canvasY > STAGE_HEIGHT) {
+          const dir = resolveDirection(canvasX, canvasY);
+          if (dir !== null) {
+            moveTouchId = tId;
+            this.currentMoveDir = dir;
+            this.moveTank(this.player, dir);
+          }
         }
       };
 
-      const extractPos = e => {
-        if (!e) return null;
-        if (e.touches && e.touches[0]) {
-          const t = e.touches[0];
-          return { x: t.clientX !== undefined ? t.clientX : (t.x !== undefined ? t.x : t.pageX), y: t.clientY !== undefined ? t.clientY : (t.y !== undefined ? t.y : t.pageY) };
+      const handlePointerMove = (t, isMouse = false) => {
+        if (!t) return;
+        const tId = isMouse ? 'mouse' : (t.identifier !== undefined ? t.identifier : 'touch');
+        if (tId === moveTouchId) {
+          const { canvasX, canvasY } = getTouchPos(t);
+          const dir = resolveDirection(canvasX, canvasY);
+          if (dir !== null) {
+            this.currentMoveDir = dir;
+          }
         }
-        if (e.changedTouches && e.changedTouches[0]) {
-          const t = e.changedTouches[0];
-          return { x: t.clientX !== undefined ? t.clientX : (t.x !== undefined ? t.x : t.pageX), y: t.clientY !== undefined ? t.clientY : (t.y !== undefined ? t.y : t.pageY) };
-        }
-        if (e.clientX !== undefined || e.x !== undefined) {
-          return { x: e.clientX !== undefined ? e.clientX : e.x, y: e.clientY !== undefined ? e.clientY : e.y };
-        }
-        return null;
       };
 
-      if (typeof wx !== 'undefined') {
-        if (wx.onTouchStart) wx.onTouchStart(e => { const p = extractPos(e); if (p) handleInput(p.x, p.y); });
-        if (wx.onTouchMove) wx.onTouchMove(e => { const p = extractPos(e); if (p) handleInput(p.x, p.y); });
-        if (wx.onMouseDown) wx.onMouseDown(e => { const p = extractPos(e); if (p) handleInput(p.x, p.y); });
-        if (wx.onKeyDown) {
-          wx.onKeyDown(e => {
-            const code = e.code || e.key || '';
-            const key = (e.key || '').toLowerCase();
-            if (code === 'KeyW' || key === 'w' || key === 'arrowup') this.currentMoveDir = DIR.UP;
-            if (code === 'KeyS' || key === 's' || key === 'arrowdown') this.currentMoveDir = DIR.DOWN;
-            if (code === 'KeyA' || key === 'a' || key === 'arrowleft') this.currentMoveDir = DIR.LEFT;
-            if (code === 'KeyD' || key === 'd' || key === 'arrowright') this.currentMoveDir = DIR.RIGHT;
-            if (code === 'KeyJ' || key === 'j' || key === ' ' || code === 'Space') this.fireBullet(this.player);
-          });
+      const handlePointerUp = (t, isMouse = false) => {
+        const tId = isMouse ? 'mouse' : (t && t.identifier !== undefined ? t.identifier : 'touch');
+        if (tId === moveTouchId || isMouse) {
+          moveTouchId = null;
+          this.currentMoveDir = null; // 仅松开移动操作时才停止前进
         }
-      }
+      };
+
+      // 键盘状态管理：按住时前进，松开时立即停止！边走边按空格/J开火
+      const keyDirMap = {
+        'KeyW': DIR.UP, 'w': DIR.UP, 'W': DIR.UP, 'ArrowUp': DIR.UP,
+        'KeyS': DIR.DOWN, 's': DIR.DOWN, 'S': DIR.DOWN, 'ArrowDown': DIR.DOWN,
+        'KeyA': DIR.LEFT, 'a': DIR.LEFT, 'A': DIR.LEFT, 'ArrowLeft': DIR.LEFT,
+        'KeyD': DIR.RIGHT, 'd': DIR.RIGHT, 'D': DIR.RIGHT, 'ArrowRight': DIR.RIGHT
+      };
+
+      const activeKeys = new Set();
+      const refreshKeyDir = () => {
+        let active = null;
+        for (const k of activeKeys) {
+          if (keyDirMap[k] !== undefined) active = keyDirMap[k];
+        }
+        this.currentMoveDir = active;
+      };
 
       if (typeof window !== 'undefined') {
         window.addEventListener('keydown', e => {
-          const code = e.code || e.key || '';
-          const key = (e.key || '').toLowerCase();
-          if (code === 'KeyW' || key === 'w' || key === 'arrowup') this.currentMoveDir = DIR.UP;
-          if (code === 'KeyS' || key === 's' || key === 'arrowdown') this.currentMoveDir = DIR.DOWN;
-          if (code === 'KeyA' || key === 'a' || key === 'arrowleft') this.currentMoveDir = DIR.LEFT;
-          if (code === 'KeyD' || key === 'd' || key === 'arrowright') this.currentMoveDir = DIR.RIGHT;
-          if (code === 'KeyJ' || key === 'j' || key === ' ' || code === 'Space') this.fireBullet(this.player);
+          const k = e.code || e.key;
+          if (keyDirMap[k] !== undefined) {
+            activeKeys.add(k);
+            refreshKeyDir();
+            e.preventDefault();
+          }
+          if (e.code === 'KeyJ' || e.key === 'j' || e.key === 'J' || e.code === 'Space' || e.key === ' ') {
+            // 键盘移动中开炮
+            this.fireBullet(this.player);
+            e.preventDefault();
+          }
+          if (e.code === 'Enter') {
+            if (this.gameState === 'GAMEOVER') this.restart();
+          }
+        });
+
+        window.addEventListener('keyup', e => {
+          const k = e.code || e.key;
+          activeKeys.delete(k);
+          refreshKeyDir();
+        });
+
+        window.addEventListener('blur', () => {
+          activeKeys.clear();
+          this.currentMoveDir = null;
+          moveTouchId = null;
+        });
+
+        window.addEventListener('mouseup', () => {
+          handlePointerUp(null, true);
         });
       }
 
       if (this.canvas) {
-        this.canvas.ontouchstart = e => { const p = extractPos(e); if (p) handleInput(p.x, p.y); };
-        this.canvas.onmousedown = e => { const p = extractPos(e); if (p) handleInput(p.x, p.y); };
+        this.canvas.addEventListener('touchstart', e => {
+          const list = e.changedTouches || (e.touches ? e.touches : [e]);
+          for (let i = 0; i < list.length; i++) handlePointerDown(list[i], false);
+          e.preventDefault();
+        }, { passive: false });
+
+        this.canvas.addEventListener('touchmove', e => {
+          const list = e.changedTouches || (e.touches ? e.touches : [e]);
+          for (let i = 0; i < list.length; i++) handlePointerMove(list[i], false);
+          e.preventDefault();
+        }, { passive: false });
+
+        this.canvas.addEventListener('touchend', e => {
+          const list = e.changedTouches || [e];
+          for (let i = 0; i < list.length; i++) handlePointerUp(list[i], false);
+          if (e.touches && e.touches.length === 0) {
+            moveTouchId = null;
+            this.currentMoveDir = null;
+          }
+          e.preventDefault();
+        }, { passive: false });
+
+        this.canvas.addEventListener('touchcancel', e => {
+          const list = e.changedTouches || [e];
+          for (let i = 0; i < list.length; i++) handlePointerUp(list[i], false);
+          if (e.touches && e.touches.length === 0) {
+            moveTouchId = null;
+            this.currentMoveDir = null;
+          }
+        });
+
+        this.canvas.addEventListener('mousedown', e => {
+          handlePointerDown(e, true);
+        });
+
+        this.canvas.addEventListener('mousemove', e => {
+          if (e.buttons === 1) handlePointerMove(e, true);
+        });
+
+        this.canvas.addEventListener('mouseup', e => {
+          handlePointerUp(e, true);
+        });
+      }
+
+      if (typeof wx !== 'undefined') {
+        if (wx.onTouchStart) wx.onTouchStart(e => {
+          const list = e.changedTouches || (e.touches ? e.touches : [e]);
+          for (let i = 0; i < list.length; i++) handlePointerDown(list[i], false);
+        });
+        if (wx.onTouchMove) wx.onTouchMove(e => {
+          const list = e.changedTouches || (e.touches ? e.touches : [e]);
+          for (let i = 0; i < list.length; i++) handlePointerMove(list[i], false);
+        });
+        if (wx.onTouchEnd) wx.onTouchEnd(e => {
+          const list = e.changedTouches || [e];
+          for (let i = 0; i < list.length; i++) handlePointerUp(list[i], false);
+          if (e.touches && e.touches.length === 0) {
+            moveTouchId = null;
+            this.currentMoveDir = null;
+          }
+        });
+        if (wx.onTouchCancel) wx.onTouchCancel(e => {
+          const list = e.changedTouches || [e];
+          for (let i = 0; i < list.length; i++) handlePointerUp(list[i], false);
+          if (e.touches && e.touches.length === 0) {
+            moveTouchId = null;
+            this.currentMoveDir = null;
+          }
+        });
+        if (wx.onKeyDown) {
+          wx.onKeyDown(e => {
+            const k = e.code || e.key;
+            if (keyDirMap[k] !== undefined) {
+              activeKeys.add(k);
+              refreshKeyDir();
+            }
+            if (e.code === 'KeyJ' || e.key === 'j' || e.code === 'Space') this.fireBullet(this.player);
+          });
+        }
+        if (wx.onKeyUp) {
+          wx.onKeyUp(e => {
+            const k = e.code || e.key;
+            activeKeys.delete(k);
+            refreshKeyDir();
+          });
+        }
       }
     }
 
@@ -397,6 +596,7 @@
     update() {
       if (this.gameState === 'GAMEOVER') return;
 
+      this.animTick++;
       if (this.player.shield > 0) this.player.shield--;
 
       if (this.player.alive && this.currentMoveDir !== null) {
@@ -410,7 +610,11 @@
           enemy.dirTimer = Math.floor(Math.random() * 50) + 30;
           enemy.dir = [DIR.DOWN, DIR.DOWN, DIR.LEFT, DIR.RIGHT, DIR.UP][Math.floor(Math.random() * 5)];
         }
-        this.moveTank(enemy, enemy.dir);
+        const moved = this.moveTank(enemy, enemy.dir);
+        if (!moved) {
+          enemy.dir = [DIR.DOWN, DIR.LEFT, DIR.RIGHT, DIR.UP][Math.floor(Math.random() * 4)];
+          enemy.dirTimer = Math.floor(Math.random() * 30) + 20;
+        }
 
         enemy.shootTimer--;
         if (enemy.shootTimer <= 0) {
@@ -419,6 +623,38 @@
         }
       });
 
+      // 道具更新与拾取检测 (五角星)
+      for (let i = this.powerups.length - 1; i >= 0; i--) {
+        const p = this.powerups[i];
+        p.timer--;
+        if (p.timer <= 0) {
+          this.powerups.splice(i, 1);
+          continue;
+        }
+
+        // 玩家触碰星星
+        if (this.player.alive &&
+            Math.abs((this.player.x + 14) - (p.x + 13)) < 22 &&
+            Math.abs((this.player.y + 14) - (p.y + 13)) < 22) {
+          this.powerups.splice(i, 1);
+          this.player.starCount = Math.min(3, this.player.starCount + 1);
+          sounds.powerup();
+
+          let msg = '★ 坦克变形！移速与弹速提升';
+          if (this.player.starCount === 2) msg = '★★ 破铁重炮！可打穿铁墙';
+          else if (this.player.starCount === 3) msg = '★★★ 获得免死护甲！多一条命';
+
+          this.effects.push({
+            type: 'floatText',
+            text: msg,
+            x: Math.max(10, Math.min(STAGE_WIDTH - 120, this.player.x - 20)),
+            y: this.player.y - 12,
+            alpha: 1.0
+          });
+        }
+      }
+
+      // 子弹飞行与碰撞检测
       for (let i = this.bullets.length - 1; i >= 0; i--) {
         const b = this.bullets[i];
         if (!b.active) continue;
@@ -442,9 +678,16 @@
           sounds.hit();
           continue;
         } else if (tile === TILE.IRON) {
+          // 吃2个星星能打穿石头/铁墙！
+          if (b.owner === this.player && this.player.starCount >= 2) {
+            this.subGrid[minR][minC] = TILE.EMPTY;
+            this.effects.push({ type: 'explode', x: minC * SUB_TILE_SIZE + 8, y: minR * SUB_TILE_SIZE + 8, frame: 0, isBig: false });
+            sounds.explode();
+          } else {
+            this.effects.push({ type: 'hit', x: b.x - 8, y: b.y - 8, frame: 0 });
+            sounds.hit();
+          }
           b.active = false;
-          this.effects.push({ type: 'hit', x: b.x - 8, y: b.y - 8, frame: 0 });
-          sounds.hit();
           continue;
         } else if (tile === TILE.BASE) {
           this.baseDestroyed = true;
@@ -456,6 +699,7 @@
           continue;
         }
 
+        // 玩家子弹击中敌军
         if (b.owner === this.player) {
           for (const enemy of this.enemies) {
             if (enemy.alive && Math.abs(b.x - (enemy.x + enemy.size / 2)) < 16 && Math.abs(b.y - (enemy.y + enemy.size / 2)) < 16) {
@@ -464,27 +708,45 @@
               this.player.score += enemy.score;
               this.effects.push({ type: 'explode', x: enemy.x, y: enemy.y, frame: 0, isBig: true });
               sounds.explode();
+
+              // 闪烁掉宝坦克必爆星星，普通坦克也有概率掉落
+              if (enemy.isFlashing || Math.random() < 0.35) {
+                this.spawnStar(enemy.x, enemy.y);
+              }
               break;
             }
           }
         }
 
+        // 敌军子弹击中玩家
         if (b.owner !== this.player && this.player.alive) {
           if (Math.abs(b.x - (this.player.x + this.player.size / 2)) < 16 && Math.abs(b.y - (this.player.y + this.player.size / 2)) < 16) {
             b.active = false;
             if (this.player.shield <= 0) {
-              this.player.lives--;
-              this.effects.push({ type: 'explode', x: this.player.x, y: this.player.y, frame: 0, isBig: true });
-              sounds.explode();
-              if (this.player.lives > 0) {
-                this.player.x = 4 * TILE_SIZE;
-                this.player.y = 12 * TILE_SIZE;
-                this.player.dir = DIR.UP;
-                this.player.shield = 120;
+              if (this.player.starCount >= 3) {
+                // 吃三个多一条命（被一颗子弹击中后，不扣命，降级恢复为未吃星星前的状态）
+                this.player.starCount = 0;
+                this.player.shield = 90; // 1.5 秒免连击保护
+                this.effects.push({ type: 'explode', x: this.player.x, y: this.player.y, frame: 0, isBig: false });
+                this.effects.push({ type: 'floatText', text: '护甲破碎！降级为初始状态', x: this.player.x - 24, y: this.player.y - 12, alpha: 1.0 });
+                sounds.armorBreak();
+                try { if (typeof wx !== 'undefined' && wx.vibrateLong) wx.vibrateLong(); } catch (e) {}
               } else {
-                this.player.alive = false;
-                this.gameState = 'GAMEOVER';
-                this.currentMoveDir = null;
+                // 0~2星：正常阵亡扣命
+                this.player.starCount = 0;
+                this.player.lives--;
+                this.effects.push({ type: 'explode', x: this.player.x, y: this.player.y, frame: 0, isBig: true });
+                sounds.explode();
+                if (this.player.lives > 0) {
+                  this.player.x = 4 * TILE_SIZE;
+                  this.player.y = 12 * TILE_SIZE;
+                  this.player.dir = DIR.UP;
+                  this.player.shield = 120;
+                } else {
+                  this.player.alive = false;
+                  this.gameState = 'GAMEOVER';
+                  this.currentMoveDir = null;
+                }
               }
             }
           }
@@ -494,9 +756,26 @@
       this.bullets = this.bullets.filter(b => b.active);
       this.enemies = this.enemies.filter(e => e.alive);
 
+      // 敌军连续波次刷新（场上全灭后刷下一波，必带掉宝闪烁坦克）
+      if (this.enemies.length === 0 && this.gameState === 'PLAYING') {
+        const slot = Math.floor(Math.random() * 3);
+        this.enemies = [
+          { x: 0 * TILE_SIZE, y: 0, dir: DIR.DOWN, speed: 0.85, size: 28, alive: true, hp: 1, score: 100, dirTimer: 30, shootTimer: 50, color: '#e0e0e0', isFlashing: slot === 0 },
+          { x: 6 * TILE_SIZE, y: 0, dir: DIR.DOWN, speed: 1.35, size: 28, alive: true, hp: 1, score: 200, dirTimer: 45, shootTimer: 60, color: '#388e3c', isFlashing: slot === 1 },
+          { x: 12 * TILE_SIZE, y: 0, dir: DIR.DOWN, speed: 0.95, size: 28, alive: true, hp: 1, score: 300, dirTimer: 60, shootTimer: 70, color: '#f57c00', isFlashing: slot === 2 }
+        ];
+      }
+
       for (let i = this.effects.length - 1; i >= 0; i--) {
-        this.effects[i].frame++;
-        if (this.effects[i].frame > 14) this.effects.splice(i, 1);
+        const eff = this.effects[i];
+        if (eff.type === 'floatText') {
+          eff.y -= 0.6;
+          eff.alpha -= 0.015;
+          if (eff.alpha <= 0) this.effects.splice(i, 1);
+        } else {
+          eff.frame++;
+          if (eff.frame > 14) this.effects.splice(i, 1);
+        }
       }
 
       for (let i = this.ripples.length - 1; i >= 0; i--) {
@@ -545,7 +824,13 @@
         }
       }
 
-      // 3. 老巢基地 (第 12 行第 6 列：x = 192, y = 384)
+      // 3. 掉落道具 (五角星)
+      this.powerups.forEach(p => {
+        if (p.timer < 300 && Math.floor(p.timer / 15) % 2 === 0) return;
+        this.drawPowerup(p);
+      });
+
+      // 4. 老巢基地 (第 12 行第 6 列：x = 192, y = 384)
       const baseX = 6 * TILE_SIZE;
       const baseY = 12 * TILE_SIZE;
       if (!this.baseDestroyed) {
@@ -576,14 +861,16 @@
         this.ctx.fillText('RIP', baseX + 16, baseY + 20);
       }
 
-      // 4. 敌军坦克
+      // 5. 敌军坦克
       this.enemies.forEach(e => {
-        if (e.alive) this.drawTank(e.x, e.y, e.size, e.dir, e.color);
+        if (!e.alive) return;
+        const eColor = (e.isFlashing && Math.floor(this.animTick / 10) % 2 === 0) ? '#ff1744' : e.color;
+        this.drawTank(e.x, e.y, e.size, e.dir, eColor, false, 0);
       });
 
-      // 5. 玩家坦克
+      // 6. 玩家坦克 (根据星星等级展现变形与光环)
       if (this.player.alive) {
-        this.drawTank(this.player.x, this.player.y, this.player.size, this.player.dir, '#ffd700');
+        this.drawTank(this.player.x, this.player.y, this.player.size, this.player.dir, '#ffd700', true, this.player.starCount);
         if (this.player.shield > 0) {
           this.ctx.strokeStyle = this.player.shield % 4 < 2 ? '#00e5ff' : '#ffffff';
           this.ctx.lineWidth = 2;
@@ -593,13 +880,13 @@
         }
       }
 
-      // 6. 子弹
+      // 7. 子弹
       this.ctx.fillStyle = '#ffffff';
       this.bullets.forEach(b => {
-        this.ctx.fillRect(b.x - 3, b.y - 3, 6, 6);
+        ctxRect: this.ctx.fillRect(b.x - 3, b.y - 3, 6, 6);
       });
 
-      // 7. 特效
+      // 8. 特效与飘字
       this.effects.forEach(eff => {
         if (eff.type === 'explode') {
           this.ctx.fillStyle = eff.frame < 6 ? '#ffea00' : '#ff3d00';
@@ -607,13 +894,20 @@
           this.ctx.beginPath();
           this.ctx.arc(eff.x + 14, eff.y + 14, r, 0, Math.PI * 2);
           this.ctx.fill();
-        } else {
+        } else if (eff.type === 'hit') {
           this.ctx.fillStyle = '#ffffff';
           this.ctx.fillRect(eff.x + 4, eff.y + 4, 8, 8);
+        } else if (eff.type === 'floatText') {
+          this.ctx.save();
+          this.ctx.fillStyle = `rgba(255, 215, 0, ${Math.max(0, eff.alpha)})`;
+          this.ctx.font = 'bold 12px sans-serif';
+          this.ctx.textAlign = 'center';
+          this.ctx.fillText(eff.text, eff.x + 30, eff.y);
+          this.ctx.restore();
         }
       });
 
-      // 8. 触控涟漪
+      // 9. 触控涟漪
       this.ripples.forEach(rp => {
         this.ctx.save();
         this.ctx.strokeStyle = `rgba(255, 255, 255, ${Math.max(0, rp.alpha)})`;
@@ -624,7 +918,7 @@
         this.ctx.restore();
       });
 
-      // 9. 侧边栏
+      // 10. 侧边栏仪表盘
       this.ctx.fillStyle = '#7f7f7f';
       this.ctx.fillRect(STAGE_WIDTH, 0, SIDEBAR_WIDTH, STAGE_HEIGHT);
       this.ctx.fillStyle = '#000000';
@@ -637,6 +931,21 @@
         this.ctx.fillRect(rx, ry, 12, 10);
       }
 
+      // 等级与星级提示
+      this.ctx.fillStyle = '#000000';
+      this.ctx.font = 'bold 13px sans-serif';
+      this.ctx.fillText('等级', STAGE_WIDTH + 14, STAGE_HEIGHT - 170);
+
+      const starIcons = ['☆☆☆', '★☆☆', '★★☆', '★★★'][this.player.starCount];
+      this.ctx.fillStyle = this.player.starCount > 0 ? '#ffb300' : '#444444';
+      this.ctx.font = 'bold 14px sans-serif';
+      this.ctx.fillText(starIcons, STAGE_WIDTH + 12, STAGE_HEIGHT - 150);
+
+      this.ctx.fillStyle = '#111111';
+      this.ctx.font = '11px sans-serif';
+      const starTips = ['普通', '变形', '破铁', '多命'];
+      this.ctx.fillText(starTips[this.player.starCount], STAGE_WIDTH + 18, STAGE_HEIGHT - 132);
+
       this.ctx.fillStyle = '#000000';
       this.ctx.font = 'bold 14px sans-serif';
       this.ctx.fillText('生命', STAGE_WIDTH + 14, STAGE_HEIGHT - 100);
@@ -648,7 +957,7 @@
       this.ctx.fillText('得分', STAGE_WIDTH + 14, STAGE_HEIGHT - 50);
       this.ctx.fillText(`${this.player.score}`, STAGE_WIDTH + 10, STAGE_HEIGHT - 30);
 
-      // 10. 下方操作台
+      // 11. 下方街机控制台
       this.ctx.fillStyle = '#181818';
       this.ctx.fillRect(0, STAGE_HEIGHT, renderW, renderH - STAGE_HEIGHT);
 
@@ -714,7 +1023,32 @@
       this.ctx.restore();
     }
 
-    drawTank(x, y, size, dir, color) {
+    drawPowerup(item) {
+      const { x, y, size = 26 } = item;
+      const cx = x + size / 2;
+      const cy = y + size / 2;
+      const r = size / 2 - 2;
+
+      this.ctx.fillStyle = '#000000';
+      this.ctx.fillRect(x, y, size, size);
+      this.ctx.strokeStyle = '#ff6d00';
+      this.ctx.lineWidth = 1.5;
+      this.ctx.strokeRect(x, y, size, size);
+
+      this.ctx.save();
+      this.ctx.beginPath();
+      this.ctx.translate(cx, cy);
+      this.ctx.fillStyle = '#ffd700';
+      for (let i = 0; i < 5; i++) {
+        this.ctx.lineTo(Math.cos(((18 + i * 72) * Math.PI) / 180) * r, -Math.sin(((18 + i * 72) * Math.PI) / 180) * r);
+        this.ctx.lineTo(Math.cos(((54 + i * 72) * Math.PI) / 180) * (r * 0.46), -Math.sin(((54 + i * 72) * Math.PI) / 180) * (r * 0.46));
+      }
+      this.ctx.closePath();
+      this.ctx.fill();
+      this.ctx.restore();
+    }
+
+    drawTank(x, y, size, dir, color, isPlayer = false, starCount = 0) {
       this.ctx.save();
       this.ctx.translate(x + size / 2, y + size / 2);
       this.ctx.rotate((dir * 90 * Math.PI) / 180);
@@ -722,19 +1056,63 @@
       const s = size;
       const hs = s / 2;
 
-      this.ctx.fillStyle = '#333333';
+      // 1. 左右履带
+      this.ctx.fillStyle = (isPlayer && starCount >= 2) ? '#1a1a1a' : '#333333';
       this.ctx.fillRect(-hs, -hs, s * 0.24, s);
       this.ctx.fillRect(hs - s * 0.24, -hs, s * 0.24, s);
 
+      // 2. 车身底盘
       this.ctx.fillStyle = color;
       this.ctx.fillRect(-s * 0.26, -s * 0.35, s * 0.52, s * 0.7);
 
+      if (isPlayer) {
+        if (starCount === 1) {
+          // 1星变形形态：前部防弹装甲加固板
+          this.ctx.fillStyle = '#ffffff';
+          this.ctx.fillRect(-s * 0.22, -s * 0.35, s * 0.44, 3);
+        } else if (starCount >= 2) {
+          // 2星及以上破铁形态：双侧重型附加装甲包
+          this.ctx.fillStyle = '#ffffff';
+          this.ctx.fillRect(-s * 0.26, -s * 0.2, 3, s * 0.4);
+          this.ctx.fillRect(s * 0.26 - 3, -s * 0.2, 3, s * 0.4);
+          this.ctx.fillRect(-s * 0.22, -s * 0.35, s * 0.44, 4);
+        }
+      }
+
+      // 3. 炮塔中心
       this.ctx.fillStyle = '#111111';
       this.ctx.fillRect(-s * 0.16, -s * 0.16, s * 0.32, s * 0.32);
-      this.ctx.fillStyle = color;
+      this.ctx.fillStyle = (isPlayer && starCount >= 3) ? '#00e5ff' : color;
       this.ctx.fillRect(-s * 0.12, -s * 0.12, s * 0.24, s * 0.24);
 
-      this.ctx.fillRect(-2, -hs - 2, 4, hs);
+      // 4. 炮管形态变化
+      if (isPlayer && starCount >= 2) {
+        // 2星及以上破铁重炮：粗壮合金主炮带红色制退器
+        this.ctx.fillStyle = '#ffffff';
+        this.ctx.fillRect(-4, -hs - 6, 8, hs + 4);
+        this.ctx.fillStyle = '#ffd700';
+        this.ctx.fillRect(-3, -hs - 5, 6, hs + 3);
+        this.ctx.fillStyle = '#d50000';
+        this.ctx.fillRect(-5, -hs - 8, 10, 3);
+      } else if (isPlayer && starCount === 1) {
+        // 1星变形：加长重炮管与金属炮口
+        this.ctx.fillStyle = '#ffd700';
+        this.ctx.fillRect(-3, -hs - 5, 6, hs + 3);
+        this.ctx.fillStyle = '#ffffff';
+        this.ctx.fillRect(-4, -hs - 6, 8, 2);
+      } else {
+        // 0星基础单炮
+        this.ctx.fillStyle = color;
+        this.ctx.fillRect(-2, -hs - 2, 4, hs);
+      }
+
+      // 5. 3星特殊多一条命免死光环外框
+      if (isPlayer && starCount >= 3) {
+        this.ctx.strokeStyle = '#00e5ff';
+        this.ctx.lineWidth = 2;
+        this.ctx.strokeRect(-hs - 2, -hs - 2, s + 4, s + 4);
+      }
+
       this.ctx.restore();
     }
   }
