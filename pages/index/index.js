@@ -124,6 +124,8 @@ Page({
     this.powerups = [];
     this.moveTimer = null;
     this.currentHoldDir = null;
+    this.isHoldingFire = false;
+    this.fireCooldown = 0;
   },
 
   onReady() {
@@ -390,24 +392,32 @@ Page({
 
   onFireTap() {
     if (this.gameState === 'GAMEOVER') return;
-    this.fireBullet(this.player);
+    if (this.fireCooldown <= 0) {
+      const fired = this.fireBullet(this.player);
+      if (fired) this.fireCooldown = 12;
+    }
   },
 
   onFireStart() {
     if (this.gameState === 'GAMEOVER') return;
-    this.fireBullet(this.player);
+    this.isHoldingFire = true;
+    if (this.fireCooldown <= 0) {
+      const fired = this.fireBullet(this.player);
+      if (fired) this.fireCooldown = 12;
+    }
   },
 
   onFireEnd() {
+    this.isHoldingFire = false;
   },
 
   fireBullet(owner) {
-    if (!owner.alive || this.gameState === 'GAMEOVER') return;
+    if (!owner.alive || this.gameState === 'GAMEOVER') return false;
 
     // 火力 0-1 级单发，2-3 级可双发。
     const myActiveBullets = this.bullets.filter(b => b.owner === owner && b.active);
     const maxBullets = owner === this.player && this.player.weaponLevel >= 2 ? 2 : 1;
-    if (myActiveBullets.length >= maxBullets) return;
+    if (myActiveBullets.length >= maxBullets) return false;
 
     const offset = DIR_OFFSET[owner.dir];
     const bx = owner.x + owner.size / 2 + offset.x * (owner.size / 2 + 4);
@@ -422,6 +432,7 @@ Page({
       owner,
       active: true
     });
+    return true;
   },
 
   onRestart() {
@@ -436,6 +447,8 @@ Page({
     this.player.shield = 120;
     this.player.weaponLevel = 0;
     this.currentHoldDir = null;
+    this.isHoldingFire = false;
+    this.fireCooldown = 0;
     if (this.moveTimer) clearInterval(this.moveTimer);
     this.bullets = [];
     this.effects = [];
@@ -454,9 +467,19 @@ Page({
       return;
     }
 
-    // 玩家持续移动（按住时每帧移动，松开时停止，开火绝不打断）
+    if (this.fireCooldown > 0) this.fireCooldown--;
+
+    // 玩家持续移动（按住时每帧移动，松开时停止）
     if (this.player.alive && this.currentHoldDir !== null) {
       this.moveTank(this.player, this.currentHoldDir);
+    }
+
+    // 只要按着开火键，就能持续释放子弹，变换方向绝不中断
+    if (this.player.alive && this.isHoldingFire) {
+      if (this.fireCooldown <= 0) {
+        const fired = this.fireBullet(this.player);
+        if (fired) this.fireCooldown = 12; // 0.2 秒连续开火间隔
+      }
     }
 
     if (this.player.shield > 0) {

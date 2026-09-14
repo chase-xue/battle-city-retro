@@ -122,6 +122,8 @@
       this.effects = [];
       this.ripples = [];
       this.currentMoveDir = null;
+      this.isFiring = false;
+      this.fireCooldown = 0;
       this.animTick = 0;
 
       this.initMap();
@@ -279,11 +281,11 @@
 
     // 子弹发射：0-1星单发限制，2星及以上允许双发
     fireBullet(owner) {
-      if (!owner.alive || this.gameState === 'GAMEOVER') return;
+      if (!owner.alive || this.gameState === 'GAMEOVER') return false;
 
       const myActiveBullets = this.bullets.filter(b => b.owner === owner && b.active);
       const maxBullets = (owner === this.player && this.player.starCount >= 2) ? 2 : 1;
-      if (myActiveBullets.length >= maxBullets) return;
+      if (myActiveBullets.length >= maxBullets) return false;
 
       let bSpeed = 4.0;
       if (owner === this.player) {
@@ -304,6 +306,7 @@
         owner,
         active: true
       });
+      return true;
     }
 
     restart() {
@@ -318,6 +321,8 @@
       this.player.shield = 120;
       this.player.starCount = 0;
       this.currentMoveDir = null;
+      this.isFiring = false;
+      this.fireCooldown = 0;
       this.powerups = [];
       this.bullets = [];
       this.effects = [];
@@ -374,6 +379,7 @@
       };
 
       let moveTouchId = null;
+      let fireTouchId = null;
 
       const handlePointerDown = (t, isMouse = false) => {
         if (!t) return;
@@ -400,8 +406,13 @@
         const isScreenTap = canvasY <= STAGE_HEIGHT;
 
         if (isFireButton || isFireZone || isScreenTap) {
-          // 移动时随时开炮！绝不打断左手正在进行的移动！
-          this.fireBullet(this.player);
+          // 记录按住开火状态，只要按着就持续射击，变换方向不中断！
+          fireTouchId = tId;
+          this.isFiring = true;
+          if (this.fireCooldown <= 0) {
+            const fired = this.fireBullet(this.player);
+            if (fired) this.fireCooldown = 12;
+          }
           return;
         }
 
@@ -429,9 +440,13 @@
 
       const handlePointerUp = (t, isMouse = false) => {
         const tId = isMouse ? 'mouse' : (t && t.identifier !== undefined ? t.identifier : 'touch');
-        if (tId === moveTouchId || isMouse) {
+        if (tId === moveTouchId || (isMouse && !this.isFiring)) {
           moveTouchId = null;
           this.currentMoveDir = null; // 仅松开移动操作时才停止前进
+        }
+        if (tId === fireTouchId || (isMouse && this.isFiring)) {
+          fireTouchId = null;
+          this.isFiring = false;
         }
       };
 
@@ -461,8 +476,12 @@
             e.preventDefault();
           }
           if (e.code === 'KeyJ' || e.key === 'j' || e.key === 'J' || e.code === 'Space' || e.key === ' ') {
-            // 键盘移动中开炮
-            this.fireBullet(this.player);
+            // 按着开火键：持续释放子弹，变换方向不中断
+            this.isFiring = true;
+            if (this.fireCooldown <= 0) {
+              const fired = this.fireBullet(this.player);
+              if (fired) this.fireCooldown = 12;
+            }
             e.preventDefault();
           }
           if (e.code === 'Enter') {
@@ -472,14 +491,21 @@
 
         window.addEventListener('keyup', e => {
           const k = e.code || e.key;
-          activeKeys.delete(k);
-          refreshKeyDir();
+          if (keyDirMap[k] !== undefined) {
+            activeKeys.delete(k);
+            refreshKeyDir();
+          }
+          if (e.code === 'KeyJ' || e.key === 'j' || e.key === 'J' || e.code === 'Space' || e.key === ' ') {
+            this.isFiring = false;
+          }
         });
 
         window.addEventListener('blur', () => {
           activeKeys.clear();
           this.currentMoveDir = null;
+          this.isFiring = false;
           moveTouchId = null;
+          fireTouchId = null;
         });
 
         window.addEventListener('mouseup', () => {
@@ -505,7 +531,9 @@
           for (let i = 0; i < list.length; i++) handlePointerUp(list[i], false);
           if (e.touches && e.touches.length === 0) {
             moveTouchId = null;
+            fireTouchId = null;
             this.currentMoveDir = null;
+            this.isFiring = false;
           }
           e.preventDefault();
         }, { passive: false });
@@ -515,7 +543,9 @@
           for (let i = 0; i < list.length; i++) handlePointerUp(list[i], false);
           if (e.touches && e.touches.length === 0) {
             moveTouchId = null;
+            fireTouchId = null;
             this.currentMoveDir = null;
+            this.isFiring = false;
           }
         });
 
@@ -546,7 +576,9 @@
           for (let i = 0; i < list.length; i++) handlePointerUp(list[i], false);
           if (e.touches && e.touches.length === 0) {
             moveTouchId = null;
+            fireTouchId = null;
             this.currentMoveDir = null;
+            this.isFiring = false;
           }
         });
         if (wx.onTouchCancel) wx.onTouchCancel(e => {
@@ -554,7 +586,9 @@
           for (let i = 0; i < list.length; i++) handlePointerUp(list[i], false);
           if (e.touches && e.touches.length === 0) {
             moveTouchId = null;
+            fireTouchId = null;
             this.currentMoveDir = null;
+            this.isFiring = false;
           }
         });
         if (wx.onKeyDown) {
@@ -564,14 +598,25 @@
               activeKeys.add(k);
               refreshKeyDir();
             }
-            if (e.code === 'KeyJ' || e.key === 'j' || e.code === 'Space') this.fireBullet(this.player);
+            if (e.code === 'KeyJ' || e.key === 'j' || e.code === 'Space') {
+              this.isFiring = true;
+              if (this.fireCooldown <= 0) {
+                const fired = this.fireBullet(this.player);
+                if (fired) this.fireCooldown = 12;
+              }
+            }
           });
         }
         if (wx.onKeyUp) {
           wx.onKeyUp(e => {
             const k = e.code || e.key;
-            activeKeys.delete(k);
-            refreshKeyDir();
+            if (keyDirMap[k] !== undefined) {
+              activeKeys.delete(k);
+              refreshKeyDir();
+            }
+            if (e.code === 'KeyJ' || e.key === 'j' || e.code === 'Space') {
+              this.isFiring = false;
+            }
           });
         }
       }
@@ -598,9 +643,20 @@
 
       this.animTick++;
       if (this.player.shield > 0) this.player.shield--;
+      if (this.fireCooldown > 0) this.fireCooldown--;
 
       if (this.player.alive && this.currentMoveDir !== null) {
         this.moveTank(this.player, this.currentMoveDir);
+      }
+
+      // 只要按着开火键，就能持续释放子弹，变换方向绝不中断
+      if (this.player.alive && this.isFiring) {
+        if (this.fireCooldown <= 0) {
+          const fired = this.fireBullet(this.player);
+          if (fired) {
+            this.fireCooldown = 12; // 约 0.2 秒连续开火间隔，手感极佳
+          }
+        }
       }
 
       this.enemies.forEach(enemy => {
