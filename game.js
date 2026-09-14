@@ -283,12 +283,12 @@
       return 1.4; // 2星破铁与3星满级稳定手感
     }
 
-    // 子弹发射：玩家默认支持2发连射（换向不卡弹），2星及以上允许3发
+    // 子弹发射：未吃星星时单发（1发），吃1个星星及以上允许双发（2发）
     fireBullet(owner) {
       if (!owner.alive || this.gameState === 'GAMEOVER') return false;
 
       const myActiveBullets = this.bullets.filter(b => b.owner === owner && b.active);
-      const maxBullets = owner === this.player ? (this.player.starCount >= 2 ? 3 : 2) : 1;
+      const maxBullets = owner === this.player ? (this.player.starCount >= 1 ? 2 : 1) : 1;
       if (myActiveBullets.length >= maxBullets) return false;
 
       let bSpeed = 4.0;
@@ -721,8 +721,8 @@
         }
       }
 
-      // 子弹飞行与碰撞检测
-      for (let i = this.bullets.length - 1; i >= 0; i--) {
+      // 1. 子弹飞行位移与出界检测
+      for (let i = 0; i < this.bullets.length; i++) {
         const b = this.bullets[i];
         if (!b.active) continue;
         const offset = DIR_OFFSET[b.dir];
@@ -731,8 +731,36 @@
 
         if (b.x < 0 || b.y < 0 || b.x > STAGE_WIDTH || b.y > STAGE_HEIGHT) {
           b.active = false;
-          continue;
         }
+      }
+
+      // 2. 玩家子弹与敌军子弹相撞相互抵消 (经典坦克大战特性)
+      for (let i = 0; i < this.bullets.length; i++) {
+        const b1 = this.bullets[i];
+        if (!b1.active || b1.owner !== this.player) continue;
+
+        for (let j = 0; j < this.bullets.length; j++) {
+          const b2 = this.bullets[j];
+          if (!b2.active || b2.owner === this.player) continue;
+
+          const dx = Math.abs(b1.x - b2.x);
+          const dy = Math.abs(b1.y - b2.y);
+          if (dx <= 12 && dy <= 12) {
+            b1.active = false;
+            b2.active = false;
+            const midX = (b1.x + b2.x) / 2;
+            const midY = (b1.y + b2.y) / 2;
+            this.effects.push({ type: 'hit', x: midX - 8, y: midY - 8, frame: 0 });
+            sounds.hit();
+            break;
+          }
+        }
+      }
+
+      // 3. 子弹与地图及坦克碰撞检测
+      for (let i = this.bullets.length - 1; i >= 0; i--) {
+        const b = this.bullets[i];
+        if (!b.active) continue;
 
         const minC = Math.max(0, Math.min(SUB_COLS - 1, Math.floor(b.x / SUB_TILE_SIZE)));
         const minR = Math.max(0, Math.min(SUB_ROWS - 1, Math.floor(b.y / SUB_TILE_SIZE)));
@@ -939,11 +967,7 @@
       if (this.player.alive) {
         this.drawTank(this.player.x, this.player.y, this.player.size, this.player.dir, '#ffd700', true, this.player.starCount);
         if (this.player.shield > 0) {
-          this.ctx.strokeStyle = this.player.shield % 4 < 2 ? '#00e5ff' : '#ffffff';
-          this.ctx.lineWidth = 2;
-          this.ctx.beginPath();
-          this.ctx.arc(this.player.x + 14, this.player.y + 14, 18, 0, Math.PI * 2);
-          this.ctx.stroke();
+          this.drawShield(this.ctx, this.player.x + 14, this.player.y + 14, this.player.shield, this.animTick);
         }
       }
 
@@ -990,7 +1014,7 @@
       this.ctx.fillRect(STAGE_WIDTH, 0, SIDEBAR_WIDTH, STAGE_HEIGHT);
       this.ctx.fillStyle = '#111111';
       this.ctx.font = 'bold 10px monospace';
-      this.ctx.fillText('v2.0连发', STAGE_WIDTH + 8, 14);
+      this.ctx.fillText('v2.1光盾', STAGE_WIDTH + 8, 14);
       this.ctx.fillStyle = '#000000';
       this.ctx.font = 'bold 13px sans-serif';
       this.ctx.fillText('敌军', STAGE_WIDTH + 14, 32);
@@ -1176,14 +1200,110 @@
         this.ctx.fillRect(-2, -hs - 2, 4, hs);
       }
 
-      // 5. 3星特殊多一条命免死光环外框
+      // 5. 3星特殊多一条命免死光环 (高质感机甲防护角标)
       if (isPlayer && starCount >= 3) {
         this.ctx.strokeStyle = '#00e5ff';
         this.ctx.lineWidth = 2;
-        this.ctx.strokeRect(-hs - 2, -hs - 2, s + 4, s + 4);
+        this.ctx.lineCap = 'round';
+        const b = hs + 3;
+        const cl = 6;
+        this.ctx.beginPath();
+        this.ctx.moveTo(-b, -b + cl); this.ctx.lineTo(-b, -b); this.ctx.lineTo(-b + cl, -b);
+        this.ctx.moveTo(b - cl, -b); this.ctx.lineTo(b, -b); this.ctx.lineTo(b, -b + cl);
+        this.ctx.moveTo(-b, b - cl); this.ctx.lineTo(-b, b); this.ctx.lineTo(-b + cl, b);
+        this.ctx.moveTo(b - cl, b); this.ctx.lineTo(b, b); this.ctx.lineTo(b, b - cl);
+        this.ctx.stroke();
       }
 
       this.ctx.restore();
+    }
+
+    drawShield(ctx, cx, cy, shieldFrames, animTick) {
+      ctx.save();
+
+      // 1. 临界状态平滑呼吸过渡，告别伤眼的 30Hz 频闪
+      let alpha = 1.0;
+      let primaryColor = '#00f0ff';
+      let innerGlow = 'rgba(0, 229, 255, 0.12)';
+      let rimGlow = 'rgba(0, 240, 255, 0.35)';
+
+      if (shieldFrames <= 60) {
+        // 最后 1 秒温和呼吸预警 (柔和变频，不刺眼)
+        const warnFreq = Math.sin(animTick * 0.28);
+        alpha = 0.5 + 0.5 * Math.abs(warnFreq);
+        if (warnFreq < 0) {
+          primaryColor = '#ffd166';
+          innerGlow = 'rgba(255, 209, 102, 0.12)';
+          rimGlow = 'rgba(255, 209, 102, 0.35)';
+        }
+      } else {
+        alpha = 0.88 + 0.12 * Math.sin(animTick * 0.08);
+      }
+      ctx.globalAlpha = alpha;
+
+      // 2. 动态微呼吸半径 (紧凑贴合 28x28 坦克本体)
+      const baseR = 21;
+      const breathe = Math.sin(animTick * 0.08) * 1.2;
+      const r = baseR + breathe;
+
+      // 3. 半透明等离子能量泡泡 (径向柔和渐变光晕，通透立体，不遮挡坦克)
+      if (typeof ctx.createRadialGradient === 'function') {
+        const grad = ctx.createRadialGradient(cx - 2, cy - 2, 2, cx, cy, r);
+        grad.addColorStop(0, 'rgba(0, 229, 255, 0.03)');
+        grad.addColorStop(0.7, innerGlow);
+        grad.addColorStop(1, rimGlow);
+        ctx.fillStyle = grad;
+      } else {
+        ctx.fillStyle = innerGlow;
+      }
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 4. 外层主防护光环 (3 段顺时针旋转的高能能量弧)
+      const outerRot = animTick * 0.04;
+      ctx.lineWidth = 2.2;
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = primaryColor;
+      if (typeof ctx.shadowBlur !== 'undefined') {
+        ctx.shadowColor = primaryColor;
+        ctx.shadowBlur = 6;
+      }
+
+      for (let i = 0; i < 3; i++) {
+        const startAng = outerRot + (i * (Math.PI * 2 / 3));
+        const endAng = startAng + (Math.PI * 2 / 3) * 0.65;
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, startAng, endAng);
+        ctx.stroke();
+      }
+
+      // 5. 内层逆向流转细光弧 (全息能量矩阵感)
+      if (typeof ctx.shadowBlur !== 'undefined') ctx.shadowBlur = 0;
+      const innerR = r - 3.5;
+      const innerRot = -animTick * 0.045;
+      ctx.lineWidth = 1.4;
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.75)';
+      for (let i = 0; i < 2; i++) {
+        const startAng = innerRot + (i * Math.PI);
+        const endAng = startAng + Math.PI * 0.55;
+        ctx.beginPath();
+        ctx.arc(cx, cy, innerR, startAng, endAng);
+        ctx.stroke();
+      }
+
+      // 6. 沿护盾边缘公转的 2 颗高亮能量光子微粒
+      ctx.fillStyle = '#ffffff';
+      for (let i = 0; i < 2; i++) {
+        const angle = outerRot * 1.5 + (i * Math.PI);
+        const px = cx + Math.cos(angle) * r;
+        const py = cy + Math.sin(angle) * r;
+        ctx.beginPath();
+        ctx.arc(px, py, 1.8, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      ctx.restore();
     }
   }
 

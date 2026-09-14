@@ -424,9 +424,9 @@ Page({
   fireBullet(owner) {
     if (!owner.alive || this.gameState === 'GAMEOVER') return false;
 
-    // 玩家默认支持2发连射（换向不卡弹），2星及以上允许3发
+    // 玩家未吃星星时单发（1发），吃1星及以上允许双发（2发）
     const myActiveBullets = this.bullets.filter(b => b.owner === owner && b.active);
-    const maxBullets = owner === this.player ? (this.player.weaponLevel >= 2 ? 3 : 2) : 1;
+    const maxBullets = owner === this.player ? (this.player.weaponLevel >= 1 ? 2 : 1) : 1;
     if (myActiveBullets.length >= maxBullets) return false;
 
     const offset = DIR_OFFSET[owner.dir];
@@ -492,6 +492,7 @@ Page({
       }
     }
 
+    this.animTick = (this.animTick || 0) + 1;
     if (this.player.shield > 0) {
       this.player.shield--;
       if (this.player.shield % 60 === 0) this.setData({ shieldSeconds: Math.ceil(this.player.shield / 60) });
@@ -521,20 +522,45 @@ Page({
     });
 
     // 子弹更新与碰撞检测
-    for (let i = this.bullets.length - 1; i >= 0; i--) {
+    // 1. 子弹飞行位移与出界销毁
+    for (let i = 0; i < this.bullets.length; i++) {
       const b = this.bullets[i];
       if (!b.active) continue;
       const offset = DIR_OFFSET[b.dir];
       b.x += offset.x * b.speed;
       b.y += offset.y * b.speed;
 
-      // 1. 出界销毁
       if (b.x < 0 || b.y < 0 || b.x > STAGE_WIDTH || b.y > STAGE_HEIGHT) {
         b.active = false;
-        continue;
       }
+    }
 
-      // 2. 地图碰撞（砖墙、铁壁、老巢基地）
+    // 2. 玩家子弹与敌军子弹相撞相互抵消 (经典坦克大战特性)
+    for (let i = 0; i < this.bullets.length; i++) {
+      const b1 = this.bullets[i];
+      if (!b1.active || b1.owner !== this.player) continue;
+
+      for (let j = 0; j < this.bullets.length; j++) {
+        const b2 = this.bullets[j];
+        if (!b2.active || b2.owner === this.player) continue;
+
+        const dx = Math.abs(b1.x - b2.x);
+        const dy = Math.abs(b1.y - b2.y);
+        if (dx <= 12 && dy <= 12) {
+          b1.active = false;
+          b2.active = false;
+          const midX = (b1.x + b2.x) / 2;
+          const midY = (b1.y + b2.y) / 2;
+          this.effects.push({ type: 'hit', x: midX - 8, y: midY - 8, frame: 0 });
+          break;
+        }
+      }
+    }
+
+    // 3. 地图碰撞（砖墙、铁壁、老巢基地）及坦克判定
+    for (let i = this.bullets.length - 1; i >= 0; i--) {
+      const b = this.bullets[i];
+      if (!b.active) continue;
       const minC = Math.max(0, Math.min(SUB_COLS - 1, Math.floor(b.x / SUB_TILE_SIZE)));
       const minR = Math.max(0, Math.min(SUB_ROWS - 1, Math.floor(b.y / SUB_TILE_SIZE)));
       const tile = this.subGrid[minR] ? this.subGrid[minR][minC] : TILE.EMPTY;
@@ -720,11 +746,7 @@ Page({
     if (this.player.alive) {
       this.drawTank(ctx, this.player.x, this.player.y, this.player.size, this.player.dir, '#ffd700');
       if (this.player.shield > 0) {
-        ctx.strokeStyle = this.player.shield % 4 < 2 ? '#00e5ff' : '#ffffff';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.arc(this.player.x + 14, this.player.y + 14, 18, 0, Math.PI * 2);
-        ctx.stroke();
+        this.drawShield(ctx, this.player.x + 14, this.player.y + 14, this.player.shield, this.animTick || 0);
       }
     }
 
@@ -818,6 +840,93 @@ Page({
     ctx.fillRect(-s * 0.12, -s * 0.12, s * 0.24, s * 0.24);
 
     ctx.fillRect(-2, -hs - 2, 4, hs);
+    ctx.restore();
+  },
+
+  drawShield(ctx, cx, cy, shieldFrames, animTick) {
+    ctx.save();
+
+    // 1. 临界状态平滑呼吸过渡，告别刺眼频闪
+    let alpha = 1.0;
+    let primaryColor = '#00f0ff';
+    let innerGlow = 'rgba(0, 229, 255, 0.12)';
+    let rimGlow = 'rgba(0, 240, 255, 0.35)';
+
+    if (shieldFrames <= 60) {
+      const warnFreq = Math.sin(animTick * 0.28);
+      alpha = 0.5 + 0.5 * Math.abs(warnFreq);
+      if (warnFreq < 0) {
+        primaryColor = '#ffd166';
+        innerGlow = 'rgba(255, 209, 102, 0.12)';
+        rimGlow = 'rgba(255, 209, 102, 0.35)';
+      }
+    } else {
+      alpha = 0.88 + 0.12 * Math.sin(animTick * 0.08);
+    }
+    ctx.globalAlpha = alpha;
+
+    // 2. 动态微呼吸半径
+    const baseR = 21;
+    const breathe = Math.sin(animTick * 0.08) * 1.2;
+    const r = baseR + breathe;
+
+    // 3. 半透明能量泡泡底色
+    if (typeof ctx.createRadialGradient === 'function') {
+      const grad = ctx.createRadialGradient(cx - 2, cy - 2, 2, cx, cy, r);
+      grad.addColorStop(0, 'rgba(0, 229, 255, 0.03)');
+      grad.addColorStop(0.7, innerGlow);
+      grad.addColorStop(1, rimGlow);
+      ctx.fillStyle = grad;
+    } else {
+      ctx.fillStyle = innerGlow;
+    }
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 4. 外层主防护光环 (3段顺时针高能弧)
+    const outerRot = animTick * 0.04;
+    ctx.lineWidth = 2.2;
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = primaryColor;
+    if (typeof ctx.shadowBlur !== 'undefined') {
+      ctx.shadowColor = primaryColor;
+      ctx.shadowBlur = 6;
+    }
+
+    for (let i = 0; i < 3; i++) {
+      const startAng = outerRot + (i * (Math.PI * 2 / 3));
+      const endAng = startAng + (Math.PI * 2 / 3) * 0.65;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, startAng, endAng);
+      ctx.stroke();
+    }
+
+    // 5. 内层逆向流转细光弧
+    if (typeof ctx.shadowBlur !== 'undefined') ctx.shadowBlur = 0;
+    const innerR = r - 3.5;
+    const innerRot = -animTick * 0.045;
+    ctx.lineWidth = 1.4;
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.75)';
+    for (let i = 0; i < 2; i++) {
+      const startAng = innerRot + (i * Math.PI);
+      const endAng = startAng + Math.PI * 0.55;
+      ctx.beginPath();
+      ctx.arc(cx, cy, innerR, startAng, endAng);
+      ctx.stroke();
+    }
+
+    // 6. 沿护盾边缘公转的 2 颗能量光子
+    ctx.fillStyle = '#ffffff';
+    for (let i = 0; i < 2; i++) {
+      const angle = outerRot * 1.5 + (i * Math.PI);
+      const px = cx + Math.cos(angle) * r;
+      const py = cy + Math.sin(angle) * r;
+      ctx.beginPath();
+      ctx.arc(px, py, 1.8, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
     ctx.restore();
   }
 });

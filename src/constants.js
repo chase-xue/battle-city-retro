@@ -84,7 +84,7 @@ export const ENEMY_CONFIG = {
 // 玩家坦克等级配置
 export const PLAYER_LEVELS = [
   { level: 1, speed: 1.8, bulletSpeed: 4.2, maxBullets: 1, canBreakIron: false },
-  { level: 2, speed: 1.8, bulletSpeed: 6.0, maxBullets: 1, canBreakIron: false },
+  { level: 2, speed: 1.8, bulletSpeed: 6.0, maxBullets: 2, canBreakIron: false },
   { level: 3, speed: 1.8, bulletSpeed: 6.0, maxBullets: 2, canBreakIron: false },
   { level: 4, speed: 1.8, bulletSpeed: 6.0, maxBullets: 2, canBreakIron: true }
 ];
