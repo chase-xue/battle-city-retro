@@ -115,7 +115,7 @@ export class SpriteRenderer {
   }
 
   // 绘制坦克
-  static drawTank(ctx, { x, y, size, dir, color, isPlayer = false, level = 1, animFrame = 0, isFlashing = false }) {
+  static drawTank(ctx, { x, y, size, dir, color, isPlayer = false, level = 1, animFrame = 0, isFlashing = false, hasBoat = false, isFrozen = false, inWater = false }) {
     ctx.save();
     ctx.translate(x + size / 2, y + size / 2);
     // 旋转到对应朝向 (0: UP, 1: RIGHT, 2: DOWN, 3: LEFT)
@@ -133,10 +133,34 @@ export class SpriteRenderer {
       mainColor = flash ? '#ff0000' : '#ffffff';
     }
 
+    // 1. 战船渡水浮筒底座 (两栖气垫船型)
+    if (hasBoat) {
+      ctx.fillStyle = '#ff9800';
+      ctx.fillRect(-hs - 3, -hs - 2, s + 6, s + 4);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(-hs - 1, -hs, s + 2, s);
+      // 船头尖角导流板
+      ctx.fillStyle = '#ff5722';
+      ctx.beginPath();
+      ctx.moveTo(-hs - 3, -hs - 2);
+      ctx.lineTo(0, -hs - 6);
+      ctx.lineTo(hs + 3, -hs - 2);
+      ctx.closePath();
+      ctx.fill();
+
+      // 水中航行浪花特效
+      if (inWater) {
+        ctx.strokeStyle = '#40c4ff';
+        ctx.lineWidth = 2;
+        const wave = (animFrame % 6) * 1.5;
+        ctx.strokeRect(-hs - 4 - wave, -hs - 4 - wave, s + 8 + wave * 2, s + 8 + wave * 2);
+      }
+    }
+
     // 履带滚动交替
     const trackOffset = (Math.floor(animFrame / 4) % 2) * 2;
 
-    // 1. 左右履带
+    // 2. 左右履带
     ctx.fillStyle = secColor;
     const trackW = s * 0.22;
     ctx.fillRect(-hs, -hs, trackW, s);
@@ -149,27 +173,38 @@ export class SpriteRenderer {
       ctx.fillRect(hs - trackW + 1, ty, trackW - 2, 1.5);
     }
 
-    // 2. 车身底盘
+    // 3. 车身底盘
     ctx.fillStyle = mainColor;
     const bodyW = s * 0.56;
     const bodyH = s * 0.7;
     ctx.fillRect(-bodyW / 2, -bodyH / 2, bodyW, bodyH);
 
-    // 3. 炮塔中心与高光
+    // 4. 炮塔中心与高光
     ctx.fillStyle = '#000000';
     ctx.fillRect(-s * 0.2, -s * 0.2, s * 0.4, s * 0.4);
     ctx.fillStyle = mainColor;
     ctx.fillRect(-s * 0.16, -s * 0.16, s * 0.32, s * 0.32);
 
-    // 4. 炮管
+    // 5. 炮管
     ctx.fillStyle = isPlayer && level >= 4 ? '#ffffff' : mainColor;
     const cannonW = s * (isPlayer && level >= 3 ? 0.18 : 0.14);
     const cannonL = s * (isPlayer && level >= 2 ? 0.52 : 0.42);
     ctx.fillRect(-cannonW / 2, -hs, cannonW, cannonL);
 
-    // 5. 炮口加固圈
+    // 6. 炮口加固圈
     ctx.fillStyle = '#000000';
     ctx.fillRect(-cannonW / 2, -hs, cannonW, 2);
+
+    // 7. 冰冻霜冻效果 (被时钟定身)
+    if (isFrozen) {
+      ctx.fillStyle = 'rgba(128, 222, 234, 0.45)';
+      ctx.fillRect(-hs - 2, -hs - 2, s + 4, s + 4);
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(-hs - 2, -hs - 2, s + 4, s + 4);
+      ctx.fillStyle = '#00e5ff';
+      ctx.fillRect(-3, -3, 6, 6);
+    }
 
     ctx.restore();
   }
@@ -305,10 +340,51 @@ export class SpriteRenderer {
         ctx.fillRect(cx - 2, cy - 10, 4, 6);
         break;
 
-      case POWERUP_TYPE.GUN: // 🔫 手枪
-        ctx.fillStyle = '#9c27b0';
-        ctx.fillRect(cx - 6, cy - 6, 12, 4);
-        ctx.fillRect(cx - 2, cy - 2, 4, 8);
+      case POWERUP_TYPE.GUN: // 🔫 手枪（效果等同双星）
+        // 银色枪管
+        ctx.fillStyle = '#b0bec5';
+        ctx.fillRect(cx - 7, cy - 5, 14, 5);
+        // 枪口
+        ctx.fillStyle = '#37474f';
+        ctx.fillRect(cx + 6, cy - 6, 2, 6);
+        // 握把
+        ctx.fillStyle = '#8d6e63';
+        ctx.fillRect(cx - 5, cy, 5, 8);
+        // 扳机护圈
+        ctx.fillStyle = '#78909c';
+        ctx.fillRect(cx, cy, 3, 4);
+        // 双星标记
+        ctx.fillStyle = '#ffd700';
+        ctx.fillRect(cx - 4, cy - 9, 3, 3);
+        ctx.fillRect(cx + 1, cy - 9, 3, 3);
+        break;
+
+      case POWERUP_TYPE.BOAT: // ⛵ 战船渡水
+        // 浪花底座
+        ctx.fillStyle = '#00bcd4';
+        ctx.fillRect(cx - 10, cy + 5, 20, 3);
+        ctx.fillStyle = '#4dd0e1';
+        ctx.fillRect(cx - 8, cy + 8, 16, 2);
+        // 船身
+        ctx.fillStyle = '#ff9800';
+        ctx.beginPath();
+        ctx.moveTo(cx - 9, cy + 4);
+        ctx.lineTo(cx + 9, cy + 4);
+        ctx.lineTo(cx + 6, cy + 9);
+        ctx.lineTo(cx - 6, cy + 9);
+        ctx.closePath();
+        ctx.fill();
+        // 船舱与桅杆
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(cx - 2, cy - 7, 3, 11);
+        // 船帆
+        ctx.fillStyle = '#e53935';
+        ctx.beginPath();
+        ctx.moveTo(cx + 1, cy - 7);
+        ctx.lineTo(cx + 8, cy - 1);
+        ctx.lineTo(cx + 1, cy - 1);
+        ctx.closePath();
+        ctx.fill();
         break;
     }
     ctx.restore();

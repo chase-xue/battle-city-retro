@@ -3,13 +3,14 @@ import { DIR, DIR_OFFSET } from './constants.js';
 import { SpriteRenderer } from './sprites.js';
 
 export class Bullet {
-  constructor({ x, y, dir, speed, owner, canBreakIron = false }) {
+  constructor({ x, y, dir, speed, owner, canBreakIron = false, canBurnForest = false }) {
     this.x = x;
     this.y = y;
     this.dir = dir;
     this.speed = speed;
-    this.owner = owner; // 'player' | 'enemy'
+    this.owner = owner; // 'player' | 'enemy' | Tank instance
     this.canBreakIron = canBreakIron;
+    this.canBurnForest = canBurnForest;
     this.size = 6;
     this.active = true;
   }

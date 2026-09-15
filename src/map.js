@@ -49,8 +49,6 @@ export class GameMap {
   activateShovel(durationSeconds = 15) {
     this.shovelTimer = durationSeconds * 60; // 帧数
 
-    // 记录老鹰周围的微格坐标 (通常是基地的左、上、右围墙)
-    // 基地位置一般在 col 12,13, row 24,25
     const eagleSurrounding = [
       { r: 23, c: 11 }, { r: 23, c: 12 }, { r: 23, c: 13 }, { r: 23, c: 14 },
       { r: 24, c: 11 }, { r: 24, c: 14 },
@@ -72,12 +70,44 @@ export class GameMap {
     });
   }
 
+  // 敌军拾取铁锹时瓦解老鹰外围砖墙，直接使大本营暴露
+  exposeBase() {
+    this.shovelTimer = 0;
+    this.shovelOriginalTiles = null;
+    const eagleSurrounding = [
+      { r: 23, c: 11 }, { r: 23, c: 12 }, { r: 23, c: 13 }, { r: 23, c: 14 },
+      { r: 24, c: 11 }, { r: 24, c: 14 },
+      { r: 25, c: 11 }, { r: 25, c: 14 }
+    ];
+    eagleSurrounding.forEach(pos => {
+      if (this.subGrid[pos.r] && this.subGrid[pos.r][pos.c] !== undefined) {
+        this.subGrid[pos.r][pos.c] = TILE.EMPTY;
+      }
+    });
+  }
+
   update() {
     if (this.shovelTimer > 0) {
       this.shovelTimer--;
+      const eagleSurrounding = [
+        { r: 23, c: 11 }, { r: 23, c: 12 }, { r: 23, c: 13 }, { r: 23, c: 14 },
+        { r: 24, c: 11 }, { r: 24, c: 14 },
+        { r: 25, c: 11 }, { r: 25, c: 14 }
+      ];
+
+      // 最后 4 秒（<= 240 帧）闪烁预警
+      if (this.shovelTimer <= 240 && this.shovelTimer > 0) {
+        const isBrick = Math.floor(this.shovelTimer / 12) % 2 === 0;
+        eagleSurrounding.forEach(pos => {
+          if (this.subGrid[pos.r] && this.subGrid[pos.r][pos.c] !== undefined) {
+            this.subGrid[pos.r][pos.c] = isBrick ? TILE.BRICK : TILE.IRON;
+          }
+        });
+      }
+
       // 结束时恢复为砖块
-      if (this.shovelTimer === 0 && this.shovelOriginalTiles) {
-        this.shovelOriginalTiles.forEach(pos => {
+      if (this.shovelTimer === 0) {
+        eagleSurrounding.forEach(pos => {
           if (this.subGrid[pos.r] && this.subGrid[pos.r][pos.c] !== undefined) {
             this.subGrid[pos.r][pos.c] = TILE.BRICK;
           }
@@ -87,8 +117,8 @@ export class GameMap {
     }
   }
 
-  // 坦克移动碰撞检测（不能穿透砖、铁、水、基地、边界）
-  canTankPass(x, y, size) {
+  // 坦克移动碰撞检测（可配置是否具备度水能力）
+  canTankPass(x, y, size, { canCrossWater = false } = {}) {
     if (x < 0 || y < 0 || x + size > SUB_COLS * SUB_TILE_SIZE || y + size > SUB_ROWS * SUB_TILE_SIZE) {
       return false;
     }
@@ -102,12 +132,26 @@ export class GameMap {
       for (let c = minC; c <= maxC; c++) {
         if (r < 0 || r >= SUB_ROWS || c < 0 || c >= SUB_COLS) return false;
         const tile = this.subGrid[r][c];
-        if (tile === TILE.BRICK || tile === TILE.IRON || tile === TILE.WATER || tile === TILE.BASE || tile === TILE.BASE_DESTROYED) {
+        if (tile === TILE.WATER) {
+          if (canCrossWater) continue; // 战船具备渡水能力，允许通行
+          return false;
+        }
+        if (tile === TILE.BRICK || tile === TILE.IRON || tile === TILE.BASE || tile === TILE.BASE_DESTROYED) {
           return false;
         }
       }
     }
     return true;
+  }
+
+  // 检查坦克是否在水面上
+  isOnWater(x, y, size) {
+    const cx = Math.floor((x + size / 2) / SUB_TILE_SIZE);
+    const cy = Math.floor((y + size / 2) / SUB_TILE_SIZE);
+    if (cy >= 0 && cy < SUB_ROWS && cx >= 0 && cx < SUB_COLS) {
+      return this.subGrid[cy][cx] === TILE.WATER;
+    }
+    return false;
   }
 
   // 检查坦克所在地面是否为冰面
@@ -154,6 +198,7 @@ export class GameMap {
     let hitSomething = false;
     let hitIron = false;
     let hitBase = false;
+    let hitForest = false;
 
     for (let r = minR; r <= maxR; r++) {
       for (let c = minC; c <= maxC; c++) {
@@ -172,6 +217,13 @@ export class GameMap {
           this.baseDestroyed = true;
           hitBase = true;
           hitSomething = true;
+        } else if (tile === TILE.FOREST) {
+          // 子弹具备烧草属性时，烧除草地丛林
+          if (bullet.canBurnForest) {
+            this.subGrid[r][c] = TILE.EMPTY;
+            hitForest = true;
+            hitSomething = true;
+          }
         }
       }
     }
@@ -186,7 +238,7 @@ export class GameMap {
     }
 
     if (hitSomething) {
-      return { hit: true, target: hitIron ? 'iron' : 'brick' };
+      return { hit: true, target: hitIron ? 'iron' : hitForest ? 'forest' : 'brick' };
     }
 
     return { hit: false };

@@ -115,11 +115,16 @@ export class GameEngine {
 
   // 加载关卡
   loadStage(stageIndex) {
+    if (stageIndex >= LEVELS.length) {
+      this.state = 'VICTORY';
+      return;
+    }
+    this.currentStage = stageIndex;
     this.state = GAME_STATE.STAGE_START;
     this.stageStartTimer = 30; // 0.5 秒开战
     sounds.playStageStart();
 
-    const stageData = LEVELS[stageIndex % LEVELS.length];
+    const stageData = LEVELS[stageIndex];
     this.map.loadLevel(stageData.layout);
 
     this.bullets = [];
@@ -127,6 +132,8 @@ export class GameEngine {
     this.enemies = [];
     this.effects.clear();
     this.clockFreezeTimer = 0;
+    this.stagePowerupsSpawned = 0;
+    this.maxStagePowerups = 3; // 用户需求 10：每关最多出 2~3 个道具
 
     this.enemyQueue = JSON.parse(JSON.stringify(stageData.enemies));
     this.player.respawn(this.playerSpawn.x, this.playerSpawn.y);
@@ -159,7 +166,7 @@ export class GameEngine {
     });
   }
 
-  // 处理道具拾取效果
+  // 处理玩家道具拾取效果
   applyPowerup(type) {
     this.player.score += 500;
     this.effects.addScorePopup(this.player.x, this.player.y, 500);
@@ -170,7 +177,15 @@ export class GameEngine {
         break;
 
       case POWERUP_TYPE.GUN:
-        this.player.maxUpgrade();
+        // 用户需求 9：增加道具手枪，效果等于吃两颗星星
+        this.player.upgradeGun();
+        this.effects.addScorePopup(this.player.x, this.player.y, '双星手枪!');
+        break;
+
+      case POWERUP_TYPE.BOAT:
+        // 用户需求 3：道具可以增加船只，有度水能力
+        this.player.hasBoat = true;
+        this.effects.addScorePopup(this.player.x, this.player.y, '战船渡水!');
         break;
 
       case POWERUP_TYPE.HELMET:
@@ -182,12 +197,17 @@ export class GameEngine {
         break;
 
       case POWERUP_TYPE.SHOVEL:
+        // 用户需求 8：道具可以加固大本营，短暂成为钢板
         this.map.activateShovel(15);
+        this.effects.addScorePopup(this.player.x, this.player.y, '老巢钢板加固!');
         break;
 
       case POWERUP_TYPE.CLOCK:
         this.clockFreezeTimer = 60 * 10; // 定身 10 秒
-        this.enemies.forEach(e => (e.isFrozen = true));
+        this.enemies.forEach(e => {
+          e.isFrozen = true;
+          e.freezeTimer = 600;
+        });
         break;
 
       case POWERUP_TYPE.BOMB:
@@ -199,6 +219,65 @@ export class GameEngine {
         });
         this.enemies = [];
         sounds.playExplosion(true);
+        break;
+    }
+  }
+
+  // 用户需求 6：敌军也可以吃道具
+  applyEnemyPowerup(enemy, type) {
+    sounds.playPowerup();
+    this.effects.addScorePopup(enemy.x, enemy.y, '⚠️敌军抢宝!');
+
+    switch (type) {
+      case POWERUP_TYPE.HELMET:
+        // 敌方全员套盾 8 秒
+        this.enemies.forEach(e => (e.shieldTimer = 60 * 8));
+        break;
+
+      case POWERUP_TYPE.CLOCK:
+        // 定身玩家 5 秒
+        this.player.isFrozen = true;
+        this.player.freezeTimer = 60 * 5;
+        break;
+
+      case POWERUP_TYPE.BOMB:
+        // 炸伤玩家（损失一条命）
+        if (this.player.alive && this.player.shieldTimer <= 0) {
+          this.player.alive = false;
+          this.effects.addExplosion(this.player.x, this.player.y, 36, true);
+          sounds.playExplosion(true);
+          this.handlePlayerDeath();
+        }
+        break;
+
+      case POWERUP_TYPE.SHOVEL:
+        // 瓦解老巢外墙，暴露老鹰司令部
+        this.map.exposeBase();
+        sounds.playHitIron();
+        break;
+
+      case POWERUP_TYPE.STAR:
+        // 敌军升级，子弹速度增加并加血
+        enemy.bulletSpeed = Math.min(6.5, enemy.bulletSpeed + 1.2);
+        enemy.hp++;
+        break;
+
+      case POWERUP_TYPE.GUN:
+        // 敌军强力重装升级
+        enemy.hp += 2;
+        enemy.bulletSpeed = 6.0;
+        enemy.speed = Math.min(2.5, enemy.speed + 0.5);
+        enemy.canBurnForest = true;
+        break;
+
+      case POWERUP_TYPE.BOAT:
+        // 敌军获得渡水能力
+        enemy.hasBoat = true;
+        break;
+
+      case POWERUP_TYPE.TANK:
+        // 敌军全体回满生命
+        this.enemies.forEach(e => (e.hp = e.maxHp));
         break;
     }
   }
@@ -232,7 +311,18 @@ export class GameEngine {
       this.stageStartTimer--;
       if (this.stageStartTimer <= 0) {
         this.currentStage++;
-        this.loadStage(this.currentStage);
+        if (this.currentStage >= LEVELS.length) {
+          this.state = 'VICTORY';
+        } else {
+          this.loadStage(this.currentStage);
+        }
+      }
+      return;
+    }
+
+    if (this.state === 'VICTORY') {
+      if (this.controller.isStartTriggered()) {
+        this.state = GAME_STATE.MENU;
       }
       return;
     }
@@ -303,8 +393,9 @@ export class GameEngine {
               this.effects.addScorePopup(enemy.x, enemy.y, enemy.score);
               sounds.playExplosion(true);
 
-              // 击毁掉宝坦克，生成全图道具
-              if (enemy.isFlashing) {
+              // 击毁掉宝坦克，生成全图道具（用户需求 10：限制每关最多出2~3个道具）
+              if (enemy.isFlashing && this.stagePowerupsSpawned < this.maxStagePowerups) {
+                this.stagePowerupsSpawned++;
                 this.powerups.push(new PowerUp());
               }
             } else {
@@ -347,17 +438,24 @@ export class GameEngine {
     this.bullets = this.bullets.filter(b => b.active);
     this.enemies = this.enemies.filter(e => e.alive);
 
-    // 6. 道具拾取检测
+    // 6. 道具拾取检测（用户需求 6：玩家与敌军均可拾取道具）
     for (let i = this.powerups.length - 1; i >= 0; i--) {
       const p = this.powerups[i];
       p.update();
       if (p.checkPick(this.player)) {
         this.applyPowerup(p.type);
+      } else {
+        for (const enemy of this.enemies) {
+          if (enemy.alive && p.checkPick(enemy)) {
+            this.applyEnemyPowerup(enemy, p.type);
+            break;
+          }
+        }
       }
     }
     this.powerups = this.powerups.filter(p => p.active);
 
-    // 7. 过关判定（所有敌人都已被生成且全部消灭）
+    // 7. 过关判定（所有敌人都已被生成且全部消灭，进入下一关或通关）
     if (this.enemyQueue.length === 0 && this.enemies.length === 0) {
       this.state = GAME_STATE.STAGE_CLEAR;
       this.stageStartTimer = 120;
@@ -416,8 +514,8 @@ export class GameEngine {
     this.powerups.forEach(p => p.render(this.ctx));
 
     // 坦克与子弹
-    this.player.render(this.ctx);
-    this.enemies.forEach(e => e.render(this.ctx));
+    this.player.render(this.ctx, this.map);
+    this.enemies.forEach(e => e.render(this.ctx, this.map));
     this.bullets.forEach(b => b.render(this.ctx));
 
     // 视觉特效 (爆炸、出生星)
@@ -437,6 +535,8 @@ export class GameEngine {
       this.renderStageClearBanner(STAGE_WIDTH, STAGE_HEIGHT);
     } else if (this.state === GAME_STATE.GAMEOVER) {
       this.renderGameOverBanner(STAGE_WIDTH, STAGE_HEIGHT);
+    } else if (this.state === 'VICTORY') {
+      this.renderVictoryBanner(STAGE_WIDTH, STAGE_HEIGHT);
     }
 
     // 5. 手机竖屏虚拟手柄区域绘制
@@ -550,6 +650,30 @@ export class GameEngine {
     this.ctx.fillStyle = '#aaaaaa';
     this.ctx.font = '14px monospace';
     this.ctx.fillText('点击或按开始键重玩', w / 2, h / 2 + 60);
+    this.ctx.textAlign = 'left';
+  }
+
+  // 绘制通关胜利弹窗
+  renderVictoryBanner(w, h) {
+    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.88)';
+    this.ctx.fillRect(0, 0, w, h);
+
+    this.ctx.fillStyle = '#ffd700';
+    this.ctx.font = 'bold 30px monospace';
+    this.ctx.textAlign = 'center';
+    this.ctx.fillText('🏆 VICTORY! 🏆', w / 2, h / 2 - 40);
+
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.font = 'bold 18px monospace';
+    this.ctx.fillText('20 关全部通关！你是坦克王！', w / 2, h / 2);
+
+    this.ctx.fillStyle = '#4caf50';
+    this.ctx.font = '16px monospace';
+    this.ctx.fillText(`FINAL SCORE: ${this.player ? this.player.score : 0}`, w / 2, h / 2 + 40);
+
+    this.ctx.fillStyle = '#aaaaaa';
+    this.ctx.font = '14px monospace';
+    this.ctx.fillText('按开始键或点击返回菜单', w / 2, h / 2 + 80);
     this.ctx.textAlign = 'left';
   }
 

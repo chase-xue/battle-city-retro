@@ -10,7 +10,8 @@ const POWERUP_POOL = [
   POWERUP_TYPE.SHOVEL,
   POWERUP_TYPE.HELMET,
   POWERUP_TYPE.TANK,
-  POWERUP_TYPE.GUN
+  POWERUP_TYPE.GUN,
+  POWERUP_TYPE.BOAT
 ];
 
 export class PowerUp {
@@ -44,18 +45,18 @@ export class PowerUp {
     SpriteRenderer.drawPowerup(ctx, this.x, this.y, this.size, this.type, this.frame);
   }
 
-  // 玩家拾取碰撞检测
-  checkPick(player) {
-    if (!this.active) return false;
-    const px = player.x;
-    const py = player.y;
-    const ps = player.size;
+  // 坦克拾取碰撞检测（玩家或敌军均可拾取）
+  checkPick(tank) {
+    if (!this.active || !tank || !tank.alive) return false;
+    const tx = tank.x;
+    const ty = tank.y;
+    const ts = tank.size;
 
     if (
-      this.x < px + ps &&
-      this.x + this.size > px &&
-      this.y < py + ps &&
-      this.y + this.size > py
+      this.x < tx + ts &&
+      this.x + this.size > tx &&
+      this.y < ty + ts &&
+      this.y + this.size > ty
     ) {
       this.active = false;
       sounds.playPowerup();

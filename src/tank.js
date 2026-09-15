@@ -16,6 +16,9 @@ export class BaseTank {
     this.isMoving = false;
     this.shootCooldown = 0;
     this.slideRemaining = 0; // 冰面惯性滑行
+    this.hasBoat = false;    // 两栖战船渡水能力
+    this.isFrozen = false;   // 时钟定身状态
+    this.freezeTimer = 0;
   }
 
   getBounds() {
@@ -54,8 +57,8 @@ export class BaseTank {
       else if (remainder > (TILE_SIZE / 2) - alignThreshold) nextY += ((TILE_SIZE / 2) - remainder);
     }
 
-    // 地形碰撞
-    if (!gameMap.canTankPass(nextX, nextY, this.size)) {
+    // 地形碰撞（支持渡水能力判定）
+    if (!gameMap.canTankPass(nextX, nextY, this.size, { canCrossWater: this.hasBoat })) {
       return false;
     }
 
@@ -100,6 +103,7 @@ export class PlayerTank extends BaseTank {
     this.bulletSpeed = config.bulletSpeed;
     this.maxBullets = config.maxBullets;
     this.canBreakIron = config.canBreakIron;
+    this.canBurnForest = config.canBurnForest || false;
   }
 
   upgrade() {
@@ -107,6 +111,12 @@ export class PlayerTank extends BaseTank {
       this.level++;
       this.applyLevelStats();
     }
+  }
+
+  // 获得手枪道具：效果等于吃两颗星星（连升2级）
+  upgradeGun() {
+    this.level = Math.min(4, this.level + 2);
+    this.applyLevelStats();
   }
 
   maxUpgrade() {
@@ -125,11 +135,22 @@ export class PlayerTank extends BaseTank {
     this.alive = true;
     this.shieldTimer = 180;
     this.level = 1;
+    this.hasBoat = false;
+    this.isFrozen = false;
+    this.freezeTimer = 0;
     this.applyLevelStats();
   }
 
   update(gameMap, otherTanks, inputDir, isShooting, activeBullets) {
     if (!this.alive) return null;
+
+    if (this.isFrozen) {
+      this.freezeTimer--;
+      if (this.freezeTimer <= 0) {
+        this.isFrozen = false;
+      }
+      return null;
+    }
 
     if (this.shieldTimer > 0) {
       this.shieldTimer--;
@@ -175,11 +196,12 @@ export class PlayerTank extends BaseTank {
       dir: this.dir,
       speed: this.bulletSpeed,
       owner: 'player',
-      canBreakIron: this.canBreakIron
+      canBreakIron: this.canBreakIron,
+      canBurnForest: this.canBurnForest
     });
   }
 
-  render(ctx) {
+  render(ctx, gameMap = null) {
     if (!this.alive) return;
 
     // 玩家经典亮黄色/绿黄色
@@ -193,7 +215,10 @@ export class PlayerTank extends BaseTank {
       color: playerColor,
       isPlayer: true,
       level: this.level,
-      animFrame: this.animFrame
+      animFrame: this.animFrame,
+      hasBoat: this.hasBoat,
+      isFrozen: this.isFrozen,
+      inWater: gameMap ? gameMap.isOnWater(this.x, this.y, this.size) : false
     });
 
     // 无敌光环
@@ -216,14 +241,19 @@ export class EnemyTank extends BaseTank {
     this.bulletSpeed = config.bulletSpeed;
     this.score = config.score;
     this.baseColor = config.color;
+    this.canBurnForest = config.canBurnForest || false;
 
     this.dirChangeTimer = Math.floor(Math.random() * 60) + 60;
     this.shootTimer = Math.floor(Math.random() * 40) + 30;
     this.isFrozen = false;
+    this.shieldTimer = 0;
   }
 
   // 受到攻击
   takeDamage() {
+    if (this.shieldTimer > 0) {
+      return false; // 敌方护盾保护中
+    }
     this.hp--;
     if (this.hp <= 0) {
       this.alive = false;
@@ -235,7 +265,15 @@ export class EnemyTank extends BaseTank {
   update(gameMap, otherTanks, activeBullets) {
     if (!this.alive) return null;
 
+    if (this.shieldTimer > 0) {
+      this.shieldTimer--;
+    }
+
     if (this.isFrozen) {
+      this.freezeTimer--;
+      if (this.freezeTimer <= 0) {
+        this.isFrozen = false;
+      }
       return null;
     }
 
@@ -288,11 +326,12 @@ export class EnemyTank extends BaseTank {
       dir: this.dir,
       speed: this.bulletSpeed,
       owner: this,
-      canBreakIron: false
+      canBreakIron: false,
+      canBurnForest: this.canBurnForest
     });
   }
 
-  render(ctx) {
+  render(ctx, gameMap = null) {
     if (!this.alive) return;
 
     let currentColor = this.baseColor;
@@ -300,6 +339,11 @@ export class EnemyTank extends BaseTank {
       // 重装坦克随血量变色
       const colors = ['#888888', '#f57c00', '#388e3c', '#1976d2'];
       currentColor = colors[Math.max(0, this.hp - 1)] || this.baseColor;
+    } else if (this.type === ENEMY_TYPE.HEAVY) {
+      // 超硬度坦克：第1次受损变色，第2次消灭
+      currentColor = this.hp > 1 ? '#c69214' : '#e5a93c';
+    } else if (this.type === ENEMY_TYPE.SUPER_FAST) {
+      currentColor = '#00e5ff';
     }
 
     SpriteRenderer.drawTank(ctx, {
@@ -311,7 +355,14 @@ export class EnemyTank extends BaseTank {
       isPlayer: false,
       level: 1,
       animFrame: this.animFrame,
-      isFlashing: this.isFlashing
+      isFlashing: this.isFlashing,
+      hasBoat: this.hasBoat,
+      isFrozen: this.isFrozen,
+      inWater: gameMap ? gameMap.isOnWater(this.x, this.y, this.size) : false
     });
+
+    if (this.shieldTimer > 0) {
+      SpriteRenderer.drawShield(ctx, this.x, this.y, this.size, this.shieldTimer);
+    }
   }
 }

@@ -40,10 +40,12 @@ export const TILE = {
 
 // 敌方坦克类型
 export const ENEMY_TYPE = {
-  BASIC: 0,  // 普通慢速
-  FAST: 1,   // 快速突击车
-  POWER: 2,  // 强力速射炮
-  ARMOR: 3   // 重装装甲车（需4发）
+  BASIC: 0,      // 普通慢速装甲兵
+  FAST: 1,       // 快速突击车
+  POWER: 2,      // 强力速射重炮（子弹可烧草）
+  HEAVY: 3,      // 超硬度坦克（需击中2次消灭）
+  SUPER_FAST: 4, // 移速超快战车（极速3.0）
+  ARMOR: 5       // 重装装甲要塞（需4发）
 };
 
 export const ENEMY_CONFIG = {
@@ -53,7 +55,8 @@ export const ENEMY_CONFIG = {
     bulletSpeed: 3.5,
     hp: 1,
     score: 100,
-    color: '#e0e0e0'
+    color: '#e0e0e0',
+    canBurnForest: false
   },
   [ENEMY_TYPE.FAST]: {
     name: '突击车',
@@ -61,7 +64,8 @@ export const ENEMY_CONFIG = {
     bulletSpeed: 4.0,
     hp: 1,
     score: 200,
-    color: '#388e3c'
+    color: '#388e3c',
+    canBurnForest: false
   },
   [ENEMY_TYPE.POWER]: {
     name: '速射炮',
@@ -69,24 +73,44 @@ export const ENEMY_CONFIG = {
     bulletSpeed: 5.5,
     hp: 1,
     score: 300,
-    color: '#f57c00'
+    color: '#f57c00',
+    canBurnForest: true
+  },
+  [ENEMY_TYPE.HEAVY]: {
+    name: '超硬度坦克',
+    speed: 1.35,
+    bulletSpeed: 4.0,
+    hp: 2,
+    score: 350,
+    color: '#c69214',
+    canBurnForest: false
+  },
+  [ENEMY_TYPE.SUPER_FAST]: {
+    name: '极速战车',
+    speed: 3.0,
+    bulletSpeed: 4.5,
+    hp: 1,
+    score: 400,
+    color: '#00e5ff',
+    canBurnForest: false
   },
   [ENEMY_TYPE.ARMOR]: {
     name: '重装坦克',
     speed: 1.1,
     bulletSpeed: 3.8,
     hp: 4,
-    score: 400,
-    color: '#1976d2'
+    score: 500,
+    color: '#1976d2',
+    canBurnForest: false
   }
 };
 
 // 玩家坦克等级配置
 export const PLAYER_LEVELS = [
-  { level: 1, speed: 1.8, bulletSpeed: 4.2, maxBullets: 1, canBreakIron: false },
-  { level: 2, speed: 1.8, bulletSpeed: 6.0, maxBullets: 2, canBreakIron: false },
-  { level: 3, speed: 1.8, bulletSpeed: 6.0, maxBullets: 2, canBreakIron: false },
-  { level: 4, speed: 1.8, bulletSpeed: 6.0, maxBullets: 2, canBreakIron: true }
+  { level: 1, speed: 1.8, bulletSpeed: 4.2, maxBullets: 1, canBreakIron: false, canBurnForest: false },
+  { level: 2, speed: 1.8, bulletSpeed: 6.0, maxBullets: 2, canBreakIron: false, canBurnForest: false },
+  { level: 3, speed: 1.9, bulletSpeed: 6.2, maxBullets: 2, canBreakIron: false, canBurnForest: true },
+  { level: 4, speed: 2.0, bulletSpeed: 6.5, maxBullets: 2, canBreakIron: true, canBurnForest: true }
 ];
 
 // 道具枚举
@@ -97,7 +121,8 @@ export const POWERUP_TYPE = {
   SHOVEL: 'shovel', // 铁锹加固老鹰
   HELMET: 'helmet', // 护盾无敌
   TANK: 'tank',     // 增加生命
-  GUN: 'gun'        // 满级神装
+  GUN: 'gun',       // 手枪（双星升级）
+  BOAT: 'boat'      // 战船渡水
 };
 
 // 游戏状态
